@@ -142,7 +142,7 @@ body.sidebar-collapsed #sidebar {
 }
 .sidebar-head { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
 .brand { font-weight: 600; letter-spacing: 0.02em; color: var(--ink); }
-.toolbar { display: flex; gap: 0.25rem; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .toolbar button {
   background: var(--paper); border: 1px solid var(--rule); padding: 0.25rem 0.5rem;
   border-radius: 4px; cursor: pointer; font-size: 0.85rem; color: var(--ink);
