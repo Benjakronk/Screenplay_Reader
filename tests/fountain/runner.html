@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fountain parser tests</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    .case { border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+    .case.pass { border-color: #bce3c8; background: #f3fbf6; }
+    .case.fail { border-color: #f0b4b4; background: #fff5f5; }
+    .case h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+    pre { font: 12px/1.4 ui-monospace, Menlo, monospace; background: #f5f5f5; padding: 0.5rem; overflow: auto; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    summary { cursor: pointer; }
+    #summary { font-weight: 600; padding: 0.5rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Fountain parser tests</h1>
+  <div id="summary">Running…</div>
+  <div id="results"></div>
+
+  <script src="../../static/fountain.js"></script>
+  <script>
+    function normalize(tok) {
+      // Strip undefined / empty arrays so missing optional fields don't fail equality.
+      const out = {};
+      for (const k of Object.keys(tok)) {
+        const v = tok[k];
+        if (v === undefined) continue;
+        if (Array.isArray(v) && v.length === 0) continue;
+        out[k] = v;
+      }
+      return out;
+    }
+    function tokensEqual(actual, expected) {
+      // Compare actual to expected, only requiring the keys in `expected` to match.
+      // Extra keys on actual (like notes:[]) are tolerated as long as they normalize away.
+      const a = actual.map(normalize);
+      if (a.length !== expected.length) return false;
+      for (let i = 0; i < expected.length; i++) {
+        const exp = expected[i];
+        const act = a[i];
+        for (const k of Object.keys(exp)) {
+          if (JSON.stringify(act[k]) !== JSON.stringify(exp[k])) return false;
+        }
+        // Forbid actual having `type` mismatch but covered above. Allow extras.
+      }
+      return true;
+    }
+
+    async function run() {
+      const res = await fetch('basic.json');
+      const cases = await res.json();
+      const out = document.getElementById('results');
+      let pass = 0, fail = 0;
+      for (const c of cases) {
+        const { titlePage, tokens } = Fountain.parse(c.input);
+        let ok = tokensEqual(tokens, c.expected);
+        if (c.expectedTitle) {
+          for (const k of Object.keys(c.expectedTitle)) {
+            if (titlePage[k] !== c.expectedTitle[k]) ok = false;
+          }
+        }
+        const div = document.createElement('div');
+        div.className = 'case ' + (ok ? 'pass' : 'fail');
+        div.innerHTML = `
+          <h3>${ok ? '✓' : '✗'} ${c.name}</h3>
+          <details ${ok ? '' : 'open'}>
+            <summary>details</summary>
+            <div class="cols">
+              <div><strong>input</strong><pre>${escape(c.input)}</pre></div>
+              <div><strong>expected</strong><pre>${escape(JSON.stringify(c.expected, null, 2))}</pre>
+                <strong>actual</strong><pre>${escape(JSON.stringify(tokens.map(normalize), null, 2))}</pre>
+              </div>
+            </div>
+          </details>`;
+        out.appendChild(div);
+        if (ok) pass++; else fail++;
+      }
+      const sum = document.getElementById('summary');
+      sum.textContent = `${pass} passed, ${fail} failed (of ${cases.length})`;
+      sum.style.color = fail === 0 ? '#0a7d2f' : '#b00020';
+    }
+    function escape(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    run();
+  </script>
+</body>
+</html>

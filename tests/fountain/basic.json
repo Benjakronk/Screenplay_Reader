@@ -1,0 +1,138 @@
+[
+  {
+    "name": "scene + action + dialogue",
+    "input": "INT. KITCHEN - DAY\n\nAnna stares at the kettle.\n\nANNA\n(whispering)\nDid you hear that?\n",
+    "expected": [
+      {"type": "scene", "text": "INT. KITCHEN - DAY"},
+      {"type": "action", "text": "Anna stares at the kettle."},
+      {"type": "character", "text": "ANNA", "dual": false},
+      {"type": "parenthetical", "text": "(whispering)"},
+      {"type": "dialogue", "text": "Did you hear that?"}
+    ]
+  },
+  {
+    "name": "title page",
+    "input": "Title: The Quiet Kitchen\nAuthor: Ben\n\nINT. KITCHEN - DAY\n\nAction.\n",
+    "expectedTitle": {"title": "The Quiet Kitchen", "author": "Ben"},
+    "expected": [
+      {"type": "scene", "text": "INT. KITCHEN - DAY"},
+      {"type": "action", "text": "Action."}
+    ]
+  },
+  {
+    "name": "forced scene with leading dot",
+    "input": ".BACK TO REALITY\n\nShe blinks.\n",
+    "expected": [
+      {"type": "scene", "text": "BACK TO REALITY"},
+      {"type": "action", "text": "She blinks."}
+    ]
+  },
+  {
+    "name": "transition",
+    "input": "He turns away.\n\nCUT TO:\n\nEXT. STREET - NIGHT\n",
+    "expected": [
+      {"type": "action", "text": "He turns away."},
+      {"type": "transition", "text": "CUT TO:"},
+      {"type": "scene", "text": "EXT. STREET - NIGHT"}
+    ]
+  },
+  {
+    "name": "forced transition with >",
+    "input": "He turns away.\n\n> SMASH CUT:\n\nINT. KITCHEN - DAY\n",
+    "expected": [
+      {"type": "action", "text": "He turns away."},
+      {"type": "transition", "text": "SMASH CUT:"},
+      {"type": "scene", "text": "INT. KITCHEN - DAY"}
+    ]
+  },
+  {
+    "name": "centered text",
+    "input": "> THE END <\n",
+    "expected": [
+      {"type": "centered", "text": "THE END"}
+    ]
+  },
+  {
+    "name": "sections and synopsis",
+    "input": "# Act One\n\n= Anna discovers the sound.\n\nINT. KITCHEN - DAY\n",
+    "expected": [
+      {"type": "section", "level": 1, "text": "Act One"},
+      {"type": "synopsis", "text": "Anna discovers the sound."},
+      {"type": "scene", "text": "INT. KITCHEN - DAY"}
+    ]
+  },
+  {
+    "name": "page break",
+    "input": "Action.\n\n===\n\nMore action.\n",
+    "expected": [
+      {"type": "action", "text": "Action."},
+      {"type": "page-break"},
+      {"type": "action", "text": "More action."}
+    ]
+  },
+  {
+    "name": "lyric",
+    "input": "~ La la la, this is a song\n",
+    "expected": [
+      {"type": "lyric", "text": "La la la, this is a song"}
+    ]
+  },
+  {
+    "name": "boneyard stripped",
+    "input": "Visible.\n\n/* hidden\ncontent */\n\nAlso visible.\n",
+    "expected": [
+      {"type": "action", "text": "Visible."},
+      {"type": "action", "text": "Also visible."}
+    ]
+  },
+  {
+    "name": "forced character with @",
+    "input": "@McAvoy\nHello there.\n",
+    "expected": [
+      {"type": "character", "text": "McAvoy", "dual": false},
+      {"type": "dialogue", "text": "Hello there."}
+    ]
+  },
+  {
+    "name": "forced action with !",
+    "input": "!ANNA NOT A CHARACTER\n",
+    "expected": [
+      {"type": "action", "text": "ANNA NOT A CHARACTER"}
+    ]
+  },
+  {
+    "name": "dual dialogue with ^",
+    "input": "ANNA\nHello.\n\nBEN ^\nHi.\n",
+    "expected": [
+      {"type": "dual-dialogue-begin"},
+      {"type": "character", "text": "ANNA", "dual": false},
+      {"type": "dialogue", "text": "Hello."},
+      {"type": "character", "text": "BEN", "dual": true},
+      {"type": "dialogue", "text": "Hi."},
+      {"type": "dual-dialogue-end"}
+    ]
+  },
+  {
+    "name": "inline note stripped from text, captured",
+    "input": "She enters [[check costume]] the room.\n",
+    "expected": [
+      {"type": "action", "text": "She enters  the room.", "notes": ["check costume"]}
+    ]
+  },
+  {
+    "name": "multi-line action merges",
+    "input": "Line one.\nLine two.\nLine three.\n",
+    "expected": [
+      {"type": "action", "text": "Line one.\nLine two.\nLine three."}
+    ]
+  },
+  {
+    "name": "multi-line dialogue stays separate",
+    "input": "ANNA\nLine one.\nLine two.\n",
+    "expected": [
+      {"type": "character", "text": "ANNA", "dual": false},
+      {"type": "dialogue", "text": "Line one."},
+      {"type": "dialogue", "text": "Line two."}
+    ]
+  }
+]

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Screenplay Reader</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="theme-paper">
+  <aside id="sidebar">
+    <div class="sidebar-head">
+      <div class="brand">Screenplay Reader</div>
+      <div class="toolbar">
+        <button id="btn-new" title="New script (Ctrl+N)">＋ New</button>
+        <button id="btn-import" title="Import a Final Draft (.fdx) file as a new script">⤵ Import</button>
+        <button id="btn-refresh" title="Refresh tree">⟳</button>
+      </div>
+    </div>
+    <nav id="tree" class="tree" aria-label="Script tree"></nav>
+    <div id="outline-panel" class="outline-panel">
+      <div class="section-head">Outline</div>
+      <ul id="outline" class="outline"></ul>
+    </div>
+    <div id="characters-panel" class="outline-panel">
+      <div class="section-head">Characters</div>
+      <ul id="characters" class="outline"></ul>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header class="topbar">
+      <button id="btn-sidebar-toggle" class="icon-btn" title="Toggle sidebar (Ctrl+\)" aria-label="Toggle sidebar">☰</button>
+      <div class="crumbs" id="crumbs">No script selected</div>
+      <select id="scene-nav" class="scene-nav" title="Jump to scene or section"><option>— jump to —</option></select>
+      <button id="btn-stats" class="icon-btn" title="Production stats">📊</button>
+      <button id="btn-cards" class="icon-btn" title="Beat board (index cards)">📇</button>
+      <div class="actions">
+        <div class="mode-switch" role="tablist">
+          <button data-mode="view" class="active" title="Read view — paginated preview (Ctrl+E)">Read</button>
+          <button data-mode="split" title="Edit — source + preview (Ctrl+E)">Edit</button>
+        </div>
+        <label class="markup-toggle" title="Show Fountain markers in the preview">
+          <input id="show-markup" type="checkbox" /> markup
+        </label>
+        <button id="btn-sync" class="icon-btn active" title="Toggle scroll sync" aria-label="Toggle scroll sync">🔗</button>
+        <div class="zoom-group" role="group" aria-label="Zoom">
+          <button id="btn-zoom-out" class="icon-btn" title="Zoom out (Ctrl+-)">A−</button>
+          <button id="btn-zoom-reset" class="icon-btn" title="Reset zoom (Ctrl+0)">A°</button>
+          <button id="btn-zoom-in" class="icon-btn" title="Zoom in (Ctrl+=)">A+</button>
+        </div>
+        <button id="btn-perform" title="Performance mode (Ctrl+Shift+P)">🎭</button>
+        <button id="btn-history" disabled title="Version history">⟲</button>
+        <button id="btn-export" disabled title="Export PDF (Ctrl+Shift+S)">↓ PDF</button>
+        <button id="btn-export-fdx" disabled title="Export Final Draft (.fdx)">↓ FDX</button>
+        <button id="btn-save" disabled title="Save (Ctrl+S)">Save</button>
+        <button id="btn-rename" disabled title="Rename">Rename</button>
+        <button id="btn-delete" disabled class="danger" title="Delete">Delete</button>
+        <button id="btn-theme" class="icon-btn" title="Theme (Ctrl+Shift+T)" aria-label="Theme">🎨</button>
+        <button id="btn-help" class="icon-btn" title="Help (F1 or ?)" aria-label="Help">?</button>
+      </div>
+    </header>
+
+    <div id="tabs" class="tab-strip hidden" role="tablist" aria-label="Open scripts"></div>
+
+    <div id="format-toolbar" class="format-toolbar hidden" role="toolbar" aria-label="Fountain formatting">
+      <div class="ft-group">
+        <div class="ft-banner">Edit</div>
+        <div class="ft-row">
+          <button data-cmd="undo" title="Undo (Ctrl+Z)">⤺</button>
+          <button data-cmd="redo" title="Redo (Ctrl+Shift+Z)">⤻</button>
+          <button data-cmd="save" title="Save (Ctrl+S)">💾</button>
+        </div>
+      </div>
+      <div class="ft-group">
+        <div class="ft-banner">Element</div>
+        <div class="ft-row">
+          <button data-cmd="elem-scene" title="Scene heading (Ctrl+1)">SCENE</button>
+          <button data-cmd="elem-action" title="Action (Ctrl+2)">Action</button>
+          <button data-cmd="elem-character" title="Character (Ctrl+3)">CHAR</button>
+          <button data-cmd="elem-paren" title="Parenthetical (Ctrl+4)">(…)</button>
+          <button data-cmd="elem-dialogue" title="Dialogue (Ctrl+5)">Dlg</button>
+          <button data-cmd="elem-transition" title="Transition (Ctrl+6)">TO:</button>
+        </div>
+      </div>
+      <div class="ft-group">
+        <div class="ft-banner">Inline</div>
+        <div class="ft-row">
+          <button data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+        </div>
+      </div>
+      <div class="ft-group">
+        <div class="ft-banner">Structure</div>
+        <div class="ft-row">
+          <button data-cmd="section" title="Section (#)">§</button>
+          <button data-cmd="synopsis" title="Synopsis (=)">=</button>
+          <button data-cmd="note" title="Note [[…]] (Ctrl+/)">📝</button>
+          <button data-cmd="centered" title="Centered &gt;…&lt;">↔</button>
+          <button data-cmd="lyric" title="Lyric (~)">♪</button>
+          <button data-cmd="pagebreak" title="Page break === (Ctrl+;)">⤓</button>
+        </div>
+      </div>
+      <div class="ft-group">
+        <div class="ft-banner">Cue</div>
+        <div class="ft-row">
+          <button data-cmd="dual" title="Make dual dialogue (^)">⫶⫶</button>
+          <button data-cmd="contd" title="Insert (CONT'D)">…</button>
+          <button data-cmd="more" title="Insert (MORE)">(M)</button>
+        </div>
+      </div>
+      <div class="ft-spacer"></div>
+    </div>
+
+    <section id="content" class="mode-view">
+      <div class="pane pane-view">
+        <article id="view" class="screenplay" aria-label="Script"></article>
+        <div id="page-faux-caret" class="faux-caret hidden" aria-hidden="true"></div>
+      </div>
+      <div class="pane pane-edit">
+        <textarea id="editor" class="editor" spellcheck="false" placeholder="Open or create a .fountain file..."></textarea>
+        <div id="source-faux-caret" class="faux-caret hidden" aria-hidden="true"></div>
+        <div id="source-mirror-sel" class="source-mirror-sel hidden" aria-hidden="true"></div>
+        <div id="autocomplete" class="autocomplete hidden"></div>
+      </div>
+    </section>
+    <div id="find-bar" class="find-bar hidden" role="search">
+      <input id="find-input" type="search" placeholder="Find…" autocomplete="off" />
+      <input id="find-replace" type="search" placeholder="Replace…" autocomplete="off" />
+      <select id="find-scope" title="Scope">
+        <option value="all">All</option>
+        <option value="dialogue">Dialogue</option>
+        <option value="action">Action</option>
+        <option value="scene">Scene headings</option>
+        <option value="character">Character cues</option>
+      </select>
+      <label class="markup-toggle"><input type="checkbox" id="find-case" /> Aa</label>
+      <span id="find-count" class="find-count"></span>
+      <button id="find-prev" title="Previous (Shift+Enter)">‹</button>
+      <button id="find-next" title="Next (Enter)">›</button>
+      <button id="find-replace-one" title="Replace current">Replace</button>
+      <button id="find-replace-all" title="Replace all">All</button>
+      <button id="find-close" class="icon-btn" title="Close (Esc)">×</button>
+    </div>
+    <footer id="status" class="status">
+      <span id="status-msg">Ready.</span>
+      <span id="status-meta"></span>
+    </footer>
+  </main>
+
+  <div id="modal-root" class="modal-root hidden" aria-hidden="true"></div>
+  <div id="ctx-menu" class="ctx-menu hidden" role="menu"></div>
+
+  <script src="fountain.js"></script>
+  <script src="pagination.js"></script>
+  <script src="app.js"></script>
+  <script src="backend.js"></script>
+</body>
+</html>
