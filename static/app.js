@@ -1,4 +1,4 @@
-// Screenplay Reader frontend.
+// Faaglarna frontend.
 
 const state = {
   currentPath: null,

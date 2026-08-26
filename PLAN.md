@@ -1,10 +1,10 @@
-# Screenplay Reader — plan
+# Faaglarna — plan
 
 A standalone app for writing and reading scripts: screenplays (film/TV), stage
 plays, and radio/audio drama. Authors in **Fountain** (the industry-standard
 plain-text format), renders to a polished, format-appropriate page view.
 
-Sibling to `Textbook_Reader/`. Lives in `Screenplay_Reader/` and reuses ideas
+Sibling to `Textbook_Reader/`. Lives in `Faaglarna/` and reuses ideas
 (not code paths) from the parent markdown reader — copy what's useful, diverge
 where the domain demands it.
 
@@ -83,7 +83,7 @@ plus a static frontend. **Not** static-only like Textbook_Reader, because
 authoring needs writes.
 
 ```
-Screenplay_Reader/
+Faaglarna/
   README.md
   server.py                 # slim: tree, file CRUD, history, upload, /api/export/pdf
   fountain.py               # parser (Python port, used by PDF exporter)
@@ -243,7 +243,7 @@ numbers on/off, and "include title page" toggle live in an export dialog.
 ## Phased build
 
 **Phase 1 — Parser + scaffold.**
-- Scaffold `Screenplay_Reader/`. Copy `server.py` from the parent, strip
+- Scaffold `Faaglarna/`. Copy `server.py` from the parent, strip
   Markdown-specific endpoints, point file root at `scripts/`.
 - Write `fountain.js` against a fixture corpus. Render screenplay HTML in
   the browser from a seed `sample-screenplay.fountain`. No editor yet.
@@ -268,11 +268,24 @@ numbers on/off, and "include title page" toggle live in an export dialog.
 **Phase 6 — Performance/read mode + polish.**
 - Read-only mode with bookmarks, resume, auto-scroll. Mobile pass. Docs.
 
+**Phase 7 — Cloud backend + live collaboration.** (built)
+- A third backend beside the local server and the offline store: Node + Express
+  + PostgreSQL on the VPS, serving the same `/api/*` contract so `app.js`'s data
+  layer is unchanged. `static/backend.js` picks between the three.
+- Content becomes a CRDT (Yjs) rather than a file: `doc_state.ydoc` is the
+  source of truth and plain text is derived from it on demand. Concurrent edits
+  merge instead of racing, so the 409 conflict path never fires in cloud mode.
+- Invite-only accounts; per-document `owner`/`editor`/`viewer`, enforced
+  server-side including on the collaboration socket.
+- PDF/FDX rendering stays in Python: a stateless localhost sidecar imports
+  `pdf_layout.py` and `fdx.py` unchanged, so there is no second implementation.
+- See `README.md` “Cloud mode” and `server-node/deploy/README-deploy.md`.
+
 ## Decisions
 
-- **Directory name**: `Screenplay_Reader/`. Mirrors `Textbook_Reader/`.
-  Even though it also handles stage + radio, "screenplay" is the most
-  recognizable term and the primary format.
+- **Name**: `Faaglarna/`. Swedish *fåglarna*, "the birds", after the
+  Aristophanes play. Written with `aa` rather than `å` so the repo name,
+  URLs, and any package identifiers stay ASCII.
 - **Parser**: hand-written, in both JS (`fountain.js`, canonical) and Python
   (`fountain.py`, used by the PDF exporter). Shared fixture corpus keeps
   them in lockstep.

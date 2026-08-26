@@ -1,6 +1,6 @@
 """Run the shared Fountain fixture corpus against fountain.py.
 
-Usage: python -m tests.fountain.test_python  (from Screenplay_Reader/)
+Usage: python -m tests.fountain.test_python  (from Faaglarna/)
 """
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-/* Screenplay Reader styles.
+/* Faaglarna styles.
 
    Themes are applied via classes on <body> (theme-paper, theme-light,
    theme-dark, theme-sepia, theme-night, theme-hicon). Each theme overrides
@@ -944,3 +944,69 @@ body.perform .screenplay {
   }
   .page:last-child { break-after: auto; page-break-after: auto; }
 }
+
+/* ---------- cloud mode (accounts + live collaboration) ----------
+   Only present when the app is signed in to a cloud backend; the local server
+   and offline builds never add the .cloud-mode class, so none of this applies
+   to them. Everything consumes the theme variables so it follows theme swaps. */
+
+/* Connection pill in the toolbar. */
+.cloud-status {
+  font: 600 0.7rem var(--sans);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0.15rem 0.45rem; border-radius: 999px;
+  border: 1px solid var(--rule); white-space: nowrap;
+}
+.cloud-status.live { color: #2e7a23; border-color: #2e7a23; background: rgba(70, 165, 60, 0.12); }
+.cloud-status.down { color: var(--muted); }
+body.theme-dark .cloud-status.live { color: #88e088; border-color: #88e088; }
+
+/* Collaborator initials, one chip per person currently in the document. */
+.peer-chips { display: inline-flex; gap: 0.2rem; align-items: center; }
+.peer-chips.hidden { display: none; }
+.peer-chip {
+  width: 1.4rem; height: 1.4rem; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 600 0.7rem var(--sans); color: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+}
+
+/* Sign-in and share dialogs. */
+.cloud-field { display: block; margin-bottom: 0.7rem; font-size: 0.85rem; color: var(--muted); }
+.cloud-field input, .cloud-field select {
+  display: block; width: 100%; margin-top: 0.25rem;
+  border: 1px solid var(--rule); border-radius: 4px;
+  padding: 0.4rem 0.5rem; font: 0.9rem var(--sans);
+  background: var(--paper); color: var(--ink);
+}
+.cloud-field input:focus, .cloud-field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.cloud-hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.9rem; }
+.cloud-hint code { font: 0.78rem var(--courier); word-break: break-all; }
+.cloud-error { color: #b00020; font-size: 0.85rem; margin: 0 0 0.6rem; }
+.cloud-error.hidden, .cloud-hint.hidden { display: none; }
+body.theme-dark .cloud-error { color: #f7a0a0; }
+
+.modal-actions button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+}
+.modal-actions button.primary:hover { filter: brightness(1.08); }
+.modal-actions button.primary:disabled { opacity: 0.6; cursor: default; filter: none; }
+.modal-actions { justify-content: flex-end; }
+.modal-actions button.ghost { margin-right: auto; }
+
+/* Who a script is shared with. */
+.share-list { list-style: none; margin: 0 0 1rem; padding: 0; }
+.share-list li {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--rule); font-size: 0.88rem;
+}
+.share-who { flex: 1; }
+.share-role { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.share-remove {
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--sidebar);
+  color: inherit; font-size: 0.75rem; padding: 0.15rem 0.5rem; cursor: pointer;
+}
+.share-remove:hover { border-color: #b00020; color: #b00020; }
+
+/* A read-only collaborator still sees the source, but cannot type into it. */
+body.cloud-mode .editor[readonly] { background: var(--sidebar); cursor: default; }

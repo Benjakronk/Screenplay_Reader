@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Screenplay Reader</title>
+  <title>Faaglarna</title>
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="theme-paper">
   <aside id="sidebar">
     <div class="sidebar-head">
-      <div class="brand">Screenplay Reader</div>
+      <div class="brand">Faaglarna</div>
       <div class="toolbar">
         <button id="btn-new" title="New script (Ctrl+N)">＋ New</button>
         <button id="btn-import" title="Import a Final Draft (.fdx) file as a new script">⤵ Import</button>
@@ -152,8 +152,19 @@
   <div id="modal-root" class="modal-root hidden" aria-hidden="true"></div>
   <div id="ctx-menu" class="ctx-menu hidden" role="menu"></div>
 
+  <!-- Load order matters:
+       config.js  – where the cloud API lives (empty = no cloud mode at all)
+       collab.js  – the Y.Text <-> textarea binding; fetches its Yjs bundle on
+                    demand, so offline visitors never download it
+       cloud.js   – must precede backend.js: it captures the UNWRAPPED fetch,
+                    and backend.js's wrapper waits on a decision that cloud.js
+                    takes part in
+       backend.js – installs the fetch shim and picks the backend. Last. -->
+  <script src="config.js"></script>
   <script src="fountain.js"></script>
   <script src="pagination.js"></script>
+  <script src="collab.js"></script>
+  <script src="cloud.js"></script>
   <script src="app.js"></script>
   <script src="backend.js"></script>
 </body>

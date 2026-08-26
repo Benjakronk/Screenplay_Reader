@@ -1,4 +1,4 @@
-// Static-mode backend for Screenplay Reader.
+// Static-mode backend for Faaglarna.
 //
 // The app normally talks to the Python server (server.py) over /api/*. When the
 // page is hosted with NO server behind it — e.g. GitHub Pages — those endpoints
@@ -31,6 +31,9 @@
 
   // null = unknown yet, true = a real server answered, false = static (no server)
   let serverPresent = null;
+
+  // True once a cloud session is confirmed. Set during boot, below.
+  let cloudMode = false;
 
   // ---------- IndexedDB plumbing ----------
   let dbPromise = null;
@@ -255,6 +258,23 @@
 
     const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
 
+    // Wait for the boot decision before routing an API call anywhere, or a
+    // request made while we are still probing would be answered by the wrong
+    // backend (typically IndexedDB, in the moment before the cloud session is
+    // confirmed).
+    await ready;
+
+    // Cloud mode: the same /api/* contract, served from the VPS. Rewrite the
+    // URL onto the API origin and carry the session token. app.js is none the
+    // wiser, which is why none of its ~20 fetch call sites needed changing.
+    if (cloudMode) {
+      const pathOnly = url.replace(/^https?:\/\/[^/]+/, '');
+      const headers = Object.assign({}, (init && init.headers) || {},
+                                    window.Cloud.authHeaders());
+      return realFetch(window.Cloud.base + pathOnly,
+                       Object.assign({}, init, { headers }));
+    }
+
     // If we already know a real server is there, just pass through.
     if (serverPresent === true) return realFetch(input, init);
 
@@ -295,7 +315,7 @@
 
   // ---------- first-run seeding ----------
   const WELCOME = `Title: Welcome
-Author: Screenplay Reader
+Author: Faaglarna
 Format: screenplay
 ===
 
@@ -411,8 +431,8 @@ FADE OUT.
   // for "I cleared my browser data".
   async function backupAll() {
     const files = await allFiles();
-    const out = { kind: 'screenplay-reader-backup', version: 1, files: files.map(f => ({ path: f.path, content: f.content })) };
-    downloadText('screenplay-reader-backup.json', JSON.stringify(out, null, 2));
+    const out = { kind: 'faaglarna-backup', version: 1, files: files.map(f => ({ path: f.path, content: f.content })) };
+    downloadText('faaglarna-backup.json', JSON.stringify(out, null, 2));
     say(`Backed up ${files.length} script(s)`);
   }
   function restoreBackup() {
@@ -500,18 +520,48 @@ FADE OUT.
 
   // Expose a small surface for debugging / reuse.
   window.Backend = { printScript, exportCurrentFile, importFile, backupAll, restoreBackup,
-                     get static() { return serverPresent === false; } };
+                     get mode() { return mode; },
+                     get static() { return mode === 'static'; },
+                     get cloud() { return mode === 'cloud'; } };
 
-  // Boot: seed before the app reads the tree, then adapt the UI if static.
+  // Boot: decide which of the three backends is in play, in priority order.
+  //
+  //   'server' — a real server answered on this origin: the local Python app.
+  //              This module stays inert, exactly as it always has.
+  //   'cloud'  — no local server, but a cloud API is configured and we have (or
+  //              the user supplies) a valid session.
+  //   'static' — neither: the offline IndexedDB store, seeded on first run.
+  //
+  // Declining the sign-in prompt lands on 'static', so an account is only ever
+  // needed for collaborating — never to use the app.
+  let mode = 'static';
   const ready = (async () => {
-    const isStatic = !(await detect());
-    if (isStatic) await seedIfEmpty();
-    return isStatic;
+    if (await detect()) return (mode = 'server');
+
+    if (window.Cloud && window.Cloud.enabled()) {
+      if (await window.Cloud.probe()) { cloudMode = true; return (mode = 'cloud'); }
+      // An invite link is an explicit request to sign in; otherwise the prompt
+      // is just an offer.
+      const signedIn = await new Promise((resolve) => window.Cloud.openSignInDialog(resolve));
+      if (signedIn) { cloudMode = true; return (mode = 'cloud'); }
+    }
+
+    await seedIfEmpty();
+    return (mode = 'static');
   })();
   window.Backend.ready = ready;
 
   // app.js binds its UI on DOMContentLoaded; run our adaptation after, on load.
   window.addEventListener('load', async () => {
-    if (await ready) adaptUi();
+    const m = await ready;
+    if (m === 'static') adaptUi();
+    if (m === 'cloud') {
+      window.Cloud.wrapApp();
+      window.Cloud.adaptUi();
+      // The first document is opened by app.js before our wrapper is installed,
+      // so join its collaboration session explicitly.
+      const path = (typeof state !== 'undefined' && state.currentPath) || null;
+      if (path) window.Cloud.joinDocument(path);
+    }
   });
 })();

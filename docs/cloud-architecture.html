@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faaglarna Cloud Backend</title>
+
+<!-- Faaglarna — cloud backend architecture record.
+     Open this file in a browser; it needs no server and no build step.
+
+     CANONICAL SOURCE. This is the authored copy. It is also published as a
+     Claude artifact, which supplies its own <!doctype>/<head> wrapper — so the
+     published version is this file with the skeleton above stripped. Edit here,
+     then regenerate that, never the other way round.
+
+     The web fonts come from Google Fonts; offline, the declared fallback stacks
+     take over and the page still reads correctly. The prose version of this
+     document is cloud-architecture.md in the same folder. -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+/* Minimal reset. The artifact host supplies one; a standalone file does not. */
+*, *::before, *::after { box-sizing: border-box; }
+img, svg { max-width: 100%; }
+
+  /* ---- tokens: complete light palette on bare :root ---- */
+  :root {
+    --ground:      #f4f7f7;
+    --surface:     #ffffff;
+    --surface-2:   #eaf1f1;
+    --ink:         #121d23;
+    --muted:       #52666f;
+    --rule:        #d6e1e3;
+    --rule-strong: #b9c8cb;
+    --accent:      #0d6e6b;
+    --accent-soft: #e0efee;
+    --good:        #2c6f45;
+    --good-soft:   #e2f0e7;
+    --warn:        #855d12;
+    --warn-soft:   #f6ecd9;
+    --shadow:      0 1px 2px rgba(18,29,35,.05), 0 8px 28px rgba(18,29,35,.06);
+
+    --measure: 68ch;
+    --f-sans:  "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --f-mono:  "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+
+  /* system-dark: no stamp on the root, so guard against an explicit light choice */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0d1418;
+      --surface:     #151e23;
+      --surface-2:   #1b262c;
+      --ink:         #dae6e9;
+      --muted:       #8aa0a9;
+      --rule:        #253339;
+      --rule-strong: #35474e;
+      --accent:      #55bcb3;
+      --accent-soft: #14302e;
+      --good:        #6cc287;
+      --good-soft:   #16301f;
+      --warn:        #d8a95c;
+      --warn-soft:   #33291459;
+      --shadow:      0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.28);
+    }
+  }
+  /* explicit dark choice wins in the other direction */
+  :root[data-theme="dark"] {
+    --ground:      #0d1418;
+    --surface:     #151e23;
+    --surface-2:   #1b262c;
+    --ink:         #dae6e9;
+    --muted:       #8aa0a9;
+    --rule:        #253339;
+    --rule-strong: #35474e;
+    --accent:      #55bcb3;
+    --accent-soft: #14302e;
+    --good:        #6cc287;
+    --good-soft:   #16301f;
+    --warn:        #d8a95c;
+    --warn-soft:   #33291459;
+    --shadow:      0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.28);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font: 400 17px/1.65 var(--f-serif);
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 clamp(20px, 4vw, 48px) 96px;
+  }
+
+  /* ---- masthead ---- */
+  header.masthead {
+    padding: clamp(48px, 8vw, 92px) 0 40px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .eyebrow {
+    font: 500 12px/1 var(--f-sans);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 20px;
+  }
+  h1 {
+    font: 600 clamp(34px, 5.2vw, 52px)/1.08 var(--f-sans);
+    letter-spacing: -.022em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+  .standfirst {
+    font: 400 clamp(18px, 2.1vw, 21px)/1.55 var(--f-serif);
+    color: var(--muted);
+    max-width: 60ch;
+    margin: 0;
+  }
+  .standfirst em { color: var(--ink); font-style: italic; }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 40px;
+    margin-top: 36px;
+    padding-top: 26px;
+    border-top: 1px solid var(--rule);
+  }
+  .fact { display: flex; flex-direction: column; gap: 3px; }
+  .fact-n {
+    font: 500 25px/1 var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .fact-l {
+    font: 400 12px/1.3 var(--f-sans);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ---- layout: reading column + contents rail ---- */
+  .cols { display: block; }
+  @media (min-width: 1080px) {
+    .cols {
+      display: grid;
+      grid-template-columns: 1fr 218px;
+      gap: 64px;
+      align-items: start;
+    }
+    nav.toc {
+      position: sticky;
+      top: 40px;
+      order: 2;
+      padding-top: 56px;
+    }
+  }
+  nav.toc { margin-top: 40px; }
+  nav.toc h2 {
+    font: 500 11px/1 var(--f-sans);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+  nav.toc a {
+    font: 400 14px/1.35 var(--f-sans);
+    color: var(--muted);
+    text-decoration: none;
+    border-left: 2px solid var(--rule);
+    padding-left: 12px;
+    display: block;
+  }
+  nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); border-left-color: var(--accent); }
+
+  main { min-width: 0; }
+
+  section { padding-top: 56px; scroll-margin-top: 24px; }
+  h2.sec {
+    font: 600 clamp(24px, 3vw, 31px)/1.2 var(--f-sans);
+    letter-spacing: -.015em;
+    text-wrap: balance;
+    margin: 0 0 8px;
+  }
+  .sec-note {
+    font: 400 15px/1.5 var(--f-sans);
+    color: var(--muted);
+    margin: 0 0 26px;
+    max-width: var(--measure);
+  }
+  h3 {
+    font: 600 19px/1.35 var(--f-sans);
+    letter-spacing: -.008em;
+    margin: 34px 0 10px;
+    text-wrap: balance;
+  }
+  p { max-width: var(--measure); margin: 0 0 17px; }
+  ul, ol.body { max-width: var(--measure); padding-left: 22px; margin: 0 0 17px; }
+  li { margin-bottom: 9px; }
+  strong { font-weight: 500; color: var(--ink); }
+  em { font-style: italic; }
+  a { color: var(--accent); }
+
+  code {
+    font: 400 .875em/1.5 var(--f-mono);
+    background: var(--surface-2);
+    border-radius: 3px;
+    padding: .12em .38em;
+    word-break: break-word;
+  }
+
+  pre {
+    font: 400 13px/1.62 var(--f-mono);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    margin: 0 0 20px;
+  }
+  pre code { background: none; padding: 0; font-size: 13px; }
+
+  /* ---- decision blocks ---- */
+  .decision {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 22px 24px;
+    margin: 0 0 16px;
+    box-shadow: var(--shadow);
+  }
+  .decision > :last-child { margin-bottom: 0; }
+  .d-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .d-head h3 { margin: 0; }
+  .chip {
+    font: 500 10.5px/1 var(--f-sans);
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    padding: 5px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chip.verified { background: var(--good-soft); color: var(--good); }
+  .chip.untested { background: var(--warn-soft); color: var(--warn); }
+  .chip.rejected { background: var(--surface-2); color: var(--muted); }
+
+  /* ---- callout ---- */
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px;
+    margin: 0 0 20px;
+    max-width: var(--measure);
+    font-size: 16px;
+  }
+  .note > :last-child { margin-bottom: 0; }
+  .note .lbl {
+    font: 500 11px/1 var(--f-sans);
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 8px;
+  }
+  .note.trap { border-left-color: var(--warn); background: var(--warn-soft); }
+  .note.trap .lbl { color: var(--warn); }
+
+  /* ---- tables ---- */
+  .tscroll { overflow-x: auto; margin: 0 0 22px; border-radius: 8px; border: 1px solid var(--rule); }
+  table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: 15px; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font: 500 11px/1.3 var(--f-sans);
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td code, th code { font-size: 13px; }
+
+  /* ---- figures ---- */
+  figure {
+    margin: 0 0 24px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 24px 24px 18px;
+    box-shadow: var(--shadow);
+  }
+  .fscroll { overflow-x: auto; }
+  figure svg { max-width: 100%; height: auto; display: block; color: var(--ink); min-width: 520px; }
+  figcaption {
+    font: 400 14px/1.5 var(--f-sans);
+    color: var(--muted);
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+  }
+  .svg-box { fill: var(--surface); stroke: var(--rule-strong); }
+  .svg-box-accent { fill: var(--accent-soft); stroke: var(--accent); }
+  .svg-t { font: 500 13px var(--f-sans); fill: var(--ink); }
+  .svg-t-sm { font: 400 11.5px var(--f-mono); fill: var(--muted); }
+  .svg-lbl { font: 400 11.5px var(--f-sans); fill: var(--muted); }
+  .svg-lbl-accent { font: 500 11.5px var(--f-sans); fill: var(--accent); }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 26px;
+    border-top: 1px solid var(--rule);
+    font: 400 14px/1.6 var(--f-sans);
+    color: var(--muted);
+    max-width: var(--measure);
+  }
+
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+  html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+<!-- Arrowheads, defined once and referenced by every figure below. Kept out of
+     any single diagram so removing one figure cannot break the others. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"/>
+    </marker>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Faaglarna · architecture record · August 2026</p>
+    <h1>The cloud backend, and why it looks like this</h1>
+    <p class="standfirst">
+      A third backend beside the local Python server and the offline build: accounts,
+      durable storage on the VPS, and several people editing one screenplay at once.
+      This is the <em>why</em> document — what was chosen, what was rejected, and
+      exactly how far the verification goes.
+    </p>
+    <div class="facts">
+      <div class="fact"><span class="fact-n">77</span><span class="fact-l">tests passing</span></div>
+      <div class="fact"><span class="fact-n">1</span><span class="fact-l">line changed in app.js</span></div>
+      <div class="fact"><span class="fact-n">3</span><span class="fact-l">backends, one frontend</span></div>
+      <div class="fact"><span class="fact-n">0</span><span class="fact-l">export code duplicated</span></div>
+    </div>
+  </header>
+
+  <div class="cols">
+
+    <nav class="toc" aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#problem">The problem</a></li>
+        <li><a href="#findings">Two findings</a></li>
+        <li><a href="#selection">Choosing a backend</a></li>
+        <li><a href="#topology">Topology</a></li>
+        <li><a href="#sync">The sync loop</a></li>
+        <li><a href="#decisions">Decisions</a></li>
+        <li><a href="#data">Data model</a></li>
+        <li><a href="#verified">What's verified</a></li>
+        <li><a href="#deploy">Deployment</a></li>
+        <li><a href="#files">File map</a></li>
+        <li><a href="#open">Open items</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <section id="problem">
+        <h2 class="sec">The problem</h2>
+        <p>
+          Faaglarna had two backends and no way to write with anyone. The
+          <strong>local Python server</strong> kept files on disk under <code>scripts/</code>.
+          The <strong>offline build</strong> ran the same frontend on GitHub Pages, with
+          <code>static/backend.js</code> answering every <code>/api/*</code> call from IndexedDB.
+        </p>
+        <p>
+          Neither survived losing a browser profile, and neither let two people open the
+          same script. The job was a third backend on the Netcup VPS that already runs
+          <code>api.ukeportalen.no</code>.
+        </p>
+      </section>
+
+      <section id="findings">
+        <h2 class="sec">Two findings that shaped everything</h2>
+        <p class="sec-note">
+          Both came from reading the existing code before designing anything, and both
+          made the work far smaller than it first looked.
+        </p>
+
+        <h3>The fetch shim was already there</h3>
+        <p>
+          <code>backend.js</code> monkey-patches <code>window.fetch</code>. Every one of app.js's
+          ~20 <code>fetch('/api/...')</code> calls goes through it, and it already had
+          <code>detect()</code> and <code>adaptUi()</code> for switching per mode. Cloud mode became a
+          third branch in a seam that <em>already existed</em>: rewrite the URL onto the API
+          origin, attach a bearer token.
+        </p>
+        <p><strong>app.js's data layer needed no changes at all.</strong></p>
+
+        <h3>markDirty was already the universal mutation hook</h3>
+        <p>
+          Fifteen places in app.js assign to the textarea. Nine call <code>markDirty()</code>
+          immediately after. Five are document load or clear, which must <em>not</em> reach the
+          CRDT. One — <code>applySmartUppercase</code> — mutates without it.
+        </p>
+        <p>
+          So pushing local edits into the CRDT is one wrapper around <code>markDirty</code> plus one
+          around <code>applySmartUppercase</code>, rather than fifteen separate rewrites.
+        </p>
+        <div class="note">
+          <span class="lbl">Incidental find</span>
+          <p>
+            <code>applySmartUppercase</code> not calling <code>markDirty</code> is a real pre-existing bug
+            in every mode — that edit never schedules an autosave on its own. The wrapper
+            fixes it in cloud mode. The local and offline modes still have it.
+          </p>
+        </div>
+      </section>
+
+      <section id="selection">
+        <h2 class="sec">Choosing a backend</h2>
+        <p class="sec-note">Decided once at boot, in priority order. The fetch wrapper waits for this before routing anything.</p>
+
+        <figure>
+          <div class="fscroll">
+            <svg viewBox="0 0 680 372" role="img" aria-label="Boot decision flow: backend.js probes the current origin for a server and falls back to cloud, then to the offline store.">
+              <rect class="svg-box" x="40" y="20" width="250" height="48" rx="7"/>
+              <text class="svg-t" x="165" y="49" text-anchor="middle">boot: backend.js</text>
+
+              <rect class="svg-box" x="40" y="100" width="250" height="64" rx="7"/>
+              <text class="svg-t" x="165" y="127" text-anchor="middle">probe /api/tree</text>
+              <text class="svg-t-sm" x="165" y="146" text-anchor="middle">on this origin</text>
+
+              <rect class="svg-box" x="40" y="204" width="250" height="64" rx="7"/>
+              <text class="svg-t" x="165" y="231" text-anchor="middle">config.js names an API</text>
+              <text class="svg-t-sm" x="165" y="250" text-anchor="middle">+ valid session or sign-in</text>
+
+              <rect class="svg-box" x="40" y="308" width="250" height="48" rx="7"/>
+              <text class="svg-t" x="165" y="337" text-anchor="middle">offline (IndexedDB)</text>
+
+              <rect class="svg-box" x="430" y="104" width="220" height="56" rx="7"/>
+              <text class="svg-t" x="540" y="138" text-anchor="middle">local Python server</text>
+
+              <rect class="svg-box-accent" x="430" y="208" width="220" height="56" rx="7"/>
+              <text class="svg-t" x="540" y="232" text-anchor="middle">cloud</text>
+              <text class="svg-t-sm" x="540" y="251" text-anchor="middle">+ live collaboration</text>
+
+              <line x1="165" y1="68" x2="165" y2="94" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+
+              <line x1="290" y1="132" x2="424" y2="132" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+              <text class="svg-lbl" x="357" y="124" text-anchor="middle">answers</text>
+
+              <line x1="165" y1="164" x2="165" y2="198" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+              <text class="svg-lbl" x="175" y="185" text-anchor="start">404 / no server</text>
+
+              <line x1="290" y1="236" x2="424" y2="236" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar-a)"/>
+              <text class="svg-lbl-accent" x="357" y="228" text-anchor="middle">signed in</text>
+
+              <line x1="165" y1="268" x2="165" y2="302" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+              <text class="svg-lbl" x="175" y="289" text-anchor="start">empty config, or declined</text>
+            </svg>
+          </div>
+          <figcaption>
+            Declining the sign-in prompt lands on the offline store, so an account is only
+            ever needed to collaborate — never to use the app. Leaving <code>config.js</code> empty
+            removes cloud mode entirely, which is also the instant rollback.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="topology">
+        <h2 class="sec">Topology</h2>
+        <p class="sec-note">One Node process with two listeners, plus a stateless Python sidecar that never faces the internet.</p>
+
+        <figure>
+          <div class="fscroll">
+            <svg viewBox="0 0 720 310" role="img" aria-label="Request flow from the browser through nginx to the Node service, which talks to a Python export sidecar and PostgreSQL.">
+              <rect class="svg-box" x="20" y="45" width="170" height="90" rx="7"/>
+              <text class="svg-t" x="105" y="76" text-anchor="middle">browser</text>
+              <text class="svg-t-sm" x="105" y="96" text-anchor="middle">GitHub Pages</text>
+              <text class="svg-t-sm" x="105" y="114" text-anchor="middle">static/</text>
+
+              <rect class="svg-box" x="245" y="55" width="100" height="70" rx="7"/>
+              <text class="svg-t" x="295" y="86" text-anchor="middle">nginx</text>
+              <text class="svg-t-sm" x="295" y="105" text-anchor="middle">:443 TLS</text>
+
+              <rect class="svg-box-accent" x="400" y="40" width="200" height="100" rx="7"/>
+              <text class="svg-t" x="500" y="70" text-anchor="middle">faaglarna-api</text>
+              <text class="svg-t-sm" x="500" y="92" text-anchor="middle">:3001 REST</text>
+              <text class="svg-t-sm" x="500" y="111" text-anchor="middle">:3003 collaboration</text>
+
+              <rect class="svg-box" x="355" y="215" width="140" height="70" rx="7"/>
+              <text class="svg-t" x="425" y="245" text-anchor="middle">faaglarna-export</text>
+              <text class="svg-t-sm" x="425" y="265" text-anchor="middle">:3002 ReportLab</text>
+
+              <rect class="svg-box" x="530" y="215" width="160" height="70" rx="7"/>
+              <text class="svg-t" x="610" y="245" text-anchor="middle">PostgreSQL</text>
+              <text class="svg-t-sm" x="610" y="265" text-anchor="middle">faaglarna</text>
+
+              <line x1="190" y1="72" x2="239" y2="72" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+              <text class="svg-lbl" x="214" y="63" text-anchor="middle">HTTPS</text>
+              <line x1="190" y1="112" x2="239" y2="112" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar-a)"/>
+              <text class="svg-lbl-accent" x="214" y="132" text-anchor="middle">WSS</text>
+
+              <line x1="345" y1="90" x2="394" y2="90" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+
+              <line x1="460" y1="140" x2="432" y2="209" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+              <text class="svg-lbl" x="330" y="180" text-anchor="start">text → PDF/FDX</text>
+
+              <line x1="545" y1="140" x2="600" y2="209" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+              <text class="svg-lbl" x="590" y="180" text-anchor="start">docs, ydoc</text>
+            </svg>
+          </div>
+          <figcaption>
+            The sidecar binds to <code>127.0.0.1</code> and has no DNS entry, no certificate, no
+            database and no credentials. Node authenticates every export and proxies to it.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="sync">
+        <h2 class="sec">The sync loop</h2>
+        <p class="sec-note">The subtlest mechanism in the whole thing, and the one worth re-reading before changing anything in the editor.</p>
+
+        <figure>
+          <div class="fscroll">
+            <svg viewBox="0 0 720 300" role="img" aria-label="A cycle: local edits are diffed into the CRDT and sent on; remote updates are diffed back into the textarea with the caret preserved.">
+              <rect class="svg-box" x="30" y="110" width="170" height="80" rx="7"/>
+              <text class="svg-t" x="115" y="145" text-anchor="middle">&lt;textarea&gt;</text>
+              <text class="svg-t-sm" x="115" y="165" text-anchor="middle">app.js, untouched</text>
+
+              <rect class="svg-box-accent" x="275" y="110" width="170" height="80" rx="7"/>
+              <text class="svg-t" x="360" y="145" text-anchor="middle">Y.Text</text>
+              <text class="svg-t-sm" x="360" y="165" text-anchor="middle">the CRDT</text>
+
+              <rect class="svg-box" x="520" y="110" width="170" height="80" rx="7"/>
+              <text class="svg-t" x="605" y="145" text-anchor="middle">Hocuspocus</text>
+              <text class="svg-t-sm" x="605" y="165" text-anchor="middle">+ doc_state</text>
+
+              <path d="M 115 110 Q 360 40 605 110" fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+              <text class="svg-lbl" x="360" y="58" text-anchor="middle">markDirty → diff → insert/delete one span</text>
+
+              <path d="M 605 190 Q 360 262 115 190" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar-a)"/>
+              <text class="svg-lbl-accent" x="360" y="280" text-anchor="middle">observe → setRangeText('preserve'), caret kept</text>
+            </svg>
+          </div>
+          <figcaption>
+            Outbound, the whole textarea is diffed against what the CRDT last held. Inbound,
+            only the differing span is replaced. A re-entrancy flag stops an inbound patch
+            echoing straight back out.
+          </figcaption>
+        </figure>
+
+        <h3>Why diff instead of intercepting each edit</h3>
+        <p>
+          The alternative was describing each of the fifteen mutation sites as an explicit
+          range operation. That is fragile in the worst way: one missed site silently
+          desyncs the document with no error anywhere.
+        </p>
+        <p>
+          The diff trims a common prefix and a common suffix — O(n) in two scans. Every real
+          edit (a keystroke, a Tab-cycle, a find/replace hit) is one contiguous change, so
+          this locates it exactly. At screenplay sizes it costs far less than the re-render
+          that follows it.
+        </p>
+        <p>
+          Coming back the other way, <code>setRangeText(..., 'preserve')</code> replaces only the
+          changed span and lets the browser adjust the selection. A blunt
+          <code>ta.value = next</code> would drop the caret to position 0 every single time a
+          collaborator typed.
+        </p>
+      </section>
+
+      <section id="decisions">
+        <h2 class="sec">Decisions</h2>
+        <p class="sec-note">The chips say how far each one is proven — not how confident it feels.</p>
+
+        <div class="decision">
+          <div class="d-head"><h3>The Y.Doc is the source of truth</h3><span class="chip verified">Verified</span></div>
+          <p>
+            <code>doc_state.ydoc</code> holds the CRDT. Plain text is <em>derived</em> from it on demand
+            for exports, snapshots and <code>/api/file</code> — never stored beside it, so there is
+            no cache that can go stale.
+          </p>
+          <p>
+            Reads go through a Hocuspocus <em>direct connection</em>, which serves the in-memory
+            document when one is loaded and the database when it isn't. Reading
+            <code>doc_state</code> directly would return a copy up to one debounce interval old, and
+            silently export stale PDFs.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>/api/save changed meaning instead of disappearing</h3><span class="chip verified">Verified</span></div>
+          <p>
+            Autosave returns 200 and does nothing — the CRDT already persisted continuously.
+            A manual Ctrl+S materialises the text and writes a <code>doc_versions</code> row.
+          </p>
+          <p>
+            That gives the existing history panel a natural cloud meaning — manual saves are
+            named versions — without touching it. The 409 "changed on disk" prompt becomes
+            unreachable, which is correct: a CRDT merges concurrent edits rather than racing
+            over a whole file.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>Undo is per-user</h3><span class="chip verified">Verified</span></div>
+          <p>
+            app.js's undo stack snapshots the <strong>whole document</strong>. Replaying one in a
+            shared script would also wipe out whatever a collaborator typed meanwhile.
+          </p>
+          <p>
+            Cloud mode delegates to Yjs's <code>UndoManager</code>, scoped with <code>trackedOrigins</code> to
+            this browser's own edits. Outside cloud mode app.js's stack is used unchanged.
+            There is a test asserting undo removes your text and leaves theirs.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>The textarea stayed — no CodeMirror rewrite</h3><span class="chip rejected">Considered, rejected</span></div>
+          <p>
+            CodeMirror 6 with <code>y-codemirror.next</code> would give remote carets drawn inline and
+            Fountain syntax highlighting, but costs rewriting ~125 editor call sites onto its
+            transaction API. Since <code>markDirty</code> already covered nine of ten mutation paths,
+            the textarea binding was a fraction of the work.
+          </p>
+          <p>
+            <strong>The cost of that choice:</strong> no remote carets inside the editor. Collaborator
+            initials appear in the toolbar instead. If that stops being enough, CodeMirror is
+            the upgrade path and the server needs no changes at all.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>app.js is not modified</h3><span class="chip untested">Logic tested, DOM wiring not</span></div>
+          <p>
+            <code>cloud.js</code> wraps four globals from outside. app.js is a classic script with no
+            <code>use strict</code>, so its top-level <code>function</code> declarations are window properties,
+            and reassigning them affects its own internal calls too.
+          </p>
+          <p>
+            This is the same override idiom <code>backend.js</code> already uses for <code>window.fetch</code>
+            and the export button, so it matches the codebase instead of introducing a
+            pattern. The payoff: the local and offline builds run byte-identical app.js, and
+            nothing here can break them.
+          </p>
+          <div class="note trap">
+            <span class="lbl">Two traps in that approach</span>
+            <p>
+              <code>const state</code> is a <em>lexical</em> global and never lands on <code>window</code> — it must be
+              reached as a bare identifier. And <code>window.status</code> is the browser's own
+              status-bar string, which app.js's <code>function status()</code> shadows; calling it
+              through <code>window.status</code> is unreliable. Both are handled by a guarded
+              <code>notify()</code> helper in <code>cloud.js</code>.
+            </p>
+          </div>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>Node for the service, Python kept for typesetting</h3><span class="chip verified">Verified</span></div>
+          <p>
+            The VPS runbook is Node-shaped and Yjs is JavaScript-native, so the service is
+            Node. But <code>pdf_layout.py</code> drives ReportLab and <code>fdx.py</code> speaks Final Draft
+            XML — and every export entry point was already a pure function:
+          </p>
+<pre><code>pdf_layout.build_pdf(text)                  -&gt; bytes
+pdf_layout.build_sides_pdf(text, character) -&gt; bytes
+pdf_layout.build_cue_sheet_pdf(text)        -&gt; bytes
+fdx.build_fdx(text)                         -&gt; bytes
+fdx.fdx_to_fountain(xml)                    -&gt; str</code></pre>
+          <p>
+            So <code>export-service/</code> is ~60 lines importing those modules <strong>unchanged</strong>. No
+            reimplementation in JavaScript, and no second copy to keep in sync. Because it is
+            stateless it skips almost the whole add-service runbook — no DNS, no TLS, no
+            database, no backups. It takes no file paths either, so
+            <code>safe_script_path</code> and its traversal surface never ship to the server.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>scrypt, not argon2</h3><span class="chip verified">Verified</span></div>
+          <p>
+            The plan said argon2. Ukeportalen already uses scrypt from Node's built-in
+            <code>crypto</code>, in a <code>scrypt$&lt;salt&gt;$&lt;hash&gt;</code> format. Matching it gives one convention
+            across both services and <strong>no native module to compile on the VPS</strong> — argon2
+            needs node-gyp. scrypt is memory-hard and an accepted password KDF, so there is
+            no security cost to the swap.
+          </p>
+          <p>
+            One deliberate difference: <code>auth.js</code> uses the <strong>async</strong> <code>crypto.scrypt</code>, not
+            <code>scryptSync</code>. The same process serves collaboration sockets, and a synchronous
+            KDF would stall every connected editor for the length of a login.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>Bearer token, not a cookie</h3><span class="chip verified">Verified</span></div>
+          <p>
+            The frontend is on <code>*.github.io</code> and the API on its own domain, so a session
+            cookie is a third-party cookie and is blocked by default in current browsers.
+            Ukeportalen can use cookies only because <code>ukeportalen.no</code> and
+            <code>api.ukeportalen.no</code> share a registrable domain.
+          </p>
+          <p>
+            A token in <code>localStorage</code> plus an <code>Authorization</code> header sidesteps this, and
+            means CORS needs no credentialed mode. Sessions and invites alike are stored only
+            as SHA-256, so a database dump cannot be replayed as a live session or a usable
+            invite.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>Hocuspocus on its own port</h3><span class="chip verified">Verified</span></div>
+          <p>
+            v4 moved off the <code>ws</code> package onto <code>crossws</code>, and <code>handleConnection()</code> now
+            wants a web-standard <code>Request</code> rather than Node's <code>IncomingMessage</code> — mounting
+            it on Express means hand-wiring the crossws Node adapter to the upgrade event.
+            The built-in <code>Server</code> class is documented as unchanged for Node, so that runs on
+            <code>:3003</code> in the same process and nginx routes <code>/collab/</code> to it.
+          </p>
+          <div class="note trap">
+            <span class="lbl">Two API details that cost a correction</span>
+            <p>
+              <code>openDirectConnection</code> is on <code>Hocuspocus</code>, not <code>Server</code> — reach it via
+              <code>server.hocuspocus</code>. And the <code>onAuthenticate</code> payload carries
+              <code>connectionConfig</code>, not <code>connection</code>. Both were found by reading the shipped
+              type definitions rather than the docs.
+            </p>
+          </div>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>Smaller calls worth remembering</h3><span class="chip verified">Verified</span></div>
+          <ul>
+            <li>
+              <strong>The document name on the wire is the UUID</strong>, never the path. Paths change on
+              rename, and a rename must not sever a live session or split a document in two.
+            </li>
+            <li>
+              <strong>Delete is a soft delete.</strong> <code>server.py</code> snapshots content before unlinking so
+              history outlives the file; the cloud mirrors that with <code>deleted_at</code> plus a
+              partial unique index, which also lets a new document reuse the freed path.
+            </li>
+            <li>
+              <strong>The Yjs bundle is fetched on demand.</strong> It is ~120 kB and only cloud mode needs
+              it, so <code>index.html</code> does not reference it and offline visitors never download it.
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="data">
+        <h2 class="sec">Data model</h2>
+<pre><code>users        (id, email UNIQUE, name, password_hash, created_at, last_seen)
+invites      (token_hash PK, email, doc_id, doc_role, invited_by,
+              expires_at, used_at, used_by)
+sessions     (token_hash PK, user_id, created_at, expires_at)
+documents    (id, owner_id, path, created_at, updated_at, deleted_at)
+doc_access   (doc_id, user_id, role)      -- owner | editor | viewer
+doc_state    (doc_id PK, ydoc BYTEA, updated_at)
+doc_versions (id, doc_id, name, timestamp, content, author_id, created_at)</code></pre>
+        <ul>
+          <li>
+            <strong><code>documents.path</code> deliberately preserves path addressing</strong>, so
+            <code>/api/tree</code>, <code>/api/file?path=</code>, rename and delete keep their existing
+            contracts. Paths are unique <em>per owner</em>, not globally.
+          </li>
+          <li>
+            <strong>The owner also gets a <code>doc_access</code> row</strong> (role <code>owner</code>), so every access
+            check is a single lookup with no special-casing.
+          </li>
+          <li>
+            <strong><code>doc_versions.name</code> carries server.py's snapshot naming</strong>
+            (<code>YYYYMMDDTHHMMSS[-N].fountain</code>), so <code>/api/history</code> returns shapes identical
+            to the local server and the history UI needed no changes.
+          </li>
+          <li>
+            <strong>Email is stored lower-cased</strong> so a plain <code>UNIQUE</code> suffices. <code>citext</code> would
+            need <code>CREATE EXTENSION</code>, which the app user may not be allowed to run.
+          </li>
+          <li>
+            <strong>Shared documents appear under <code>Shared/&lt;owner&gt;/</code></strong>, which the tree renderer
+            already supports as nested directories. <code>Shared</code> is a reserved first segment.
+          </li>
+        </ul>
+      </section>
+
+      <section id="verified">
+        <h2 class="sec">What's verified, and what isn't</h2>
+        <p class="sec-note">
+          Every suite runs with no database server and no network: <code>db.js</code> has a
+          <code>_setDriver</code> seam that swaps in PGlite, an in-process WASM PostgreSQL 18.
+        </p>
+
+        <div class="tscroll">
+          <table>
+            <thead>
+              <tr><th>Suite</th><th>Tests</th><th>What it actually exercises</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>tests/fountain/test_python.py</code></td>
+                <td class="num">16</td>
+                <td>The Fountain parser. Pre-existing and unchanged — proof the rework broke nothing.</td>
+              </tr>
+              <tr>
+                <td><code>server-node/test/smoke.js</code></td>
+                <td class="num">38 · 42</td>
+                <td>The real Express app on real Postgres: schema, auth, the whole access-control matrix, history semantics, rename and delete, CRDT storage. With <code>EXPORT_SERVICE_URL</code> set, also real PDF/FDX rendering and <code>.fdx</code> import.</td>
+              </tr>
+              <tr>
+                <td><code>server-node/test/collab.js</code></td>
+                <td class="num">12</td>
+                <td>The real Hocuspocus server over real WebSockets: auth rejection (absent, forged, no access, unknown document), propagation between two clients, convergence of concurrent edits, server-enforced read-only, persistence, and reload after a restart.</td>
+              </tr>
+              <tr>
+                <td><code>collab/test-binding.mjs</code></td>
+                <td class="num">11</td>
+                <td>The diff across 3000 fuzzed edits, plus CRDT convergence including same-offset concurrent inserts and per-user undo.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          Checked independently of the suites: the export sidecar's output is
+          <strong>byte-identical</strong> to calling the library directly, and FDX round-trips
+          losslessly across all 148 core tokens of a real script. Sections and synopses do not
+          survive, because <code>.fdx</code> cannot represent them — <code>fdx.py</code> documents this, and it
+          predates this work.
+        </p>
+
+        <div class="note trap">
+          <span class="lbl">Not verified</span>
+          <p>
+            <strong>The browser UI end-to-end.</strong> The sign-in dialog, presence chips, share dialog
+            and the wrapping of app.js's globals have no automated coverage. The logic beneath
+            them is tested; the DOM wiring is not.
+          </p>
+          <p><strong>The deployment itself</strong> — that needs the VPS.</p>
+        </div>
+      </section>
+
+      <section id="deploy">
+        <h2 class="sec">Deployment</h2>
+        <p>
+          Ports to claim in the runbook's registry: <strong>3001</strong> REST, <strong>3002</strong> Python
+          sidecar, <strong>3003</strong> collaboration WebSocket. The full sequence is in
+          <code>server-node/deploy/README-deploy.md</code>.
+        </p>
+
+        <div class="note trap">
+          <span class="lbl">The one genuine trap</span>
+          <p>
+            <strong>The generic nginx template in <code>README-add-service.md</code> will break WebSockets.</strong>
+            It sets <code>proxy_http_version 1.1</code> but not the <code>Upgrade</code> and <code>Connection</code>
+            headers, and nginx's default <code>proxy_read_timeout</code> of 60s drops idle editing
+            sessions.
+          </p>
+          <p>
+            <code>nginx-faaglarna.conf</code> sets both. If collaboration connects and then dies after a
+            minute of not typing, that is why — and it will apply to any future WebSocket
+            service on that box.
+          </p>
+        </div>
+
+        <p>
+          <code>pm2 restart</code> sends SIGTERM, which <code>server.js</code> handles by calling
+          <code>flushPendingStores()</code> before exiting; <code>kill_timeout</code> is raised to 10s for it.
+          Restarting mid-edit does not lose the last few seconds of anyone's typing.
+        </p>
+      </section>
+
+      <section id="files">
+        <h2 class="sec">File map</h2>
+        <div class="tscroll">
+          <table>
+            <thead><tr><th>Path</th><th>Role</th></tr></thead>
+            <tbody>
+              <tr><td><code>server-node/server.js</code></td><td>REST API — the same <code>/api/*</code> contract as <code>server.py</code></td></tr>
+              <tr><td><code>server-node/db.js</code></td><td>Pool, schema in <code>init()</code>, the <code>_setDriver</code> test seam</td></tr>
+              <tr><td><code>server-node/auth.js</code></td><td>scrypt, sessions, invites, <code>roleFor</code> access checks</td></tr>
+              <tr><td><code>server-node/docs.js</code></td><td>Y.Doc ↔ text, persistence, version history</td></tr>
+              <tr><td><code>server-node/collab.js</code></td><td>Hocuspocus server, authoritative <code>readText</code> / <code>writeText</code></td></tr>
+              <tr><td><code>export-service/export_server.py</code></td><td>Stateless PDF/FDX sidecar</td></tr>
+              <tr><td><code>static/config.js</code></td><td>The one place the API domain is set</td></tr>
+              <tr><td><code>static/cloud.js</code></td><td>Session, sharing UI, collaboration lifecycle, app.js wrappers</td></tr>
+              <tr><td><code>static/collab.js</code></td><td>The Y.Text ↔ textarea binding</td></tr>
+              <tr><td><code>static/vendor/collab-bundle.js</code></td><td>Generated and committed — keeps the frontend build-free</td></tr>
+              <tr><td><code>collab/build.mjs</code></td><td>Regenerates that bundle</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>Changed in the existing codebase:</strong> <code>static/backend.js</code> (three-way boot,
+          URL rewrite, auth header), <code>static/index.html</code> (script tags),
+          <code>static/style.css</code> (a <code>cloud-mode</code> section).
+        </p>
+        <p>
+          <strong>Untouched:</strong> <code>app.js</code>, <code>server.py</code>, <code>fountain.py</code>, <code>fdx.py</code>,
+          <code>pdf_layout.py</code>, <code>pagination.py</code>.
+        </p>
+      </section>
+
+      <section id="open">
+        <h2 class="sec">Open items</h2>
+        <ul>
+          <li>
+            <strong>The API domain is unchosen.</strong> certbot's HTTP-01 challenge needs a live
+            A-record, so this gates provisioning — nothing else can start until it exists.
+          </li>
+          <li>
+            <strong>Operations are documented but not executed</strong> — the nightly <code>pg_dump</code> of
+            <code>faaglarna</code>, the restore test, and the UptimeRobot monitor on <code>/api/ready</code> all
+            need the server to be up first.
+          </li>
+          <li>
+            <strong>The Yjs bundle is committed, not built in CI.</strong> That keeps
+            <code>python server.py</code> working with no npm and leaves the Pages workflow untouched,
+            but it must be regenerated by hand (<code>cd collab &amp;&amp; npm run build</code>) whenever the
+            pinned versions move.
+          </li>
+        </ul>
+      </section>
+
+      <footer>
+        <p>
+          The version of this document that travels with the code is
+          <code>docs/cloud-architecture.md</code>; update that one when the architecture moves. For
+          how to run it, see <code>server-node/deploy/README-deploy.md</code>. For what it does from
+          a user's side, see the "Cloud mode" section of <code>README.md</code>.
+        </p>
+      </footer>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>

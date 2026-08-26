@@ -1,4 +1,4 @@
-"""Screenplay Reader — local server.
+"""Faaglarna — local server.
 
 Run: python server.py [--port 8766] [--host 127.0.0.1]
 Then open http://127.0.0.1:8766 in your browser.
@@ -154,7 +154,7 @@ def list_tree() -> list[dict]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ScreenplayReader/0.1"
+    server_version = "Faaglarna/0.1"
 
     def log_message(self, fmt, *args):
         sys.stderr.write("[%s] %s\n" % (self.log_date_time_string(), fmt % args))
@@ -426,7 +426,7 @@ def main():
     ensure_seed()
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}/"
-    print(f"Screenplay Reader serving {SCRIPTS_DIR} at {url}")
+    print(f"Faaglarna serving {SCRIPTS_DIR} at {url}")
     print("Press Ctrl+C to stop.")
     if not args.no_browser:
         try:

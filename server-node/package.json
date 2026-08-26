@@ -1,0 +1,28 @@
+{
+  "name": "faaglarna-api",
+  "version": "1.0.0",
+  "description": "Faaglarna cloud backend – accounts, documents, and live collaboration (Node + PostgreSQL + Yjs)",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "create-user": "node create-user.js",
+    "test": "node test/smoke.js && node test/collab.js",
+    "test:smoke": "node test/smoke.js",
+    "test:collab": "node test/collab.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hocuspocus/extension-database": "^4.6.0",
+    "@hocuspocus/server": "^4.6.0",
+    "express": "^4.21.2",
+    "pg": "^8.13.1",
+    "yjs": "^13.6.32"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@hocuspocus/provider": "^4.6.0"
+  }
+}

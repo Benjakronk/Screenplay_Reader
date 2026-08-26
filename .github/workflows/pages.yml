@@ -1,4 +1,4 @@
-# Publishes the Screenplay Reader frontend (the `static/` folder) to GitHub
+# Publishes the Faaglarna frontend (the `static/` folder) to GitHub
 # Pages on every push to main. The site is fully client-side: scripts are stored
 # in the visitor's browser (IndexedDB) by static/backend.js, so no server runs
 # behind it.

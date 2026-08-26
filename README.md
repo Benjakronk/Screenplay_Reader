@@ -1,7 +1,10 @@
-# Screenplay Reader
+# Faaglarna
 
 Local-first authoring and reading for screenplays, stage plays, and radio
 drama. Sibling to the parent markdown reader; doesn't share code, by design.
+
+Named for *fåglarna* — "the birds", after the Aristophanes play, and after a
+grandfather who used the word for stubbed toes.
 
 ## Run
 
@@ -112,10 +115,53 @@ Hello.
 | P         | Toggle performance mode                 |
 | Esc       | Exit performance mode / close modal     |
 
+## Cloud mode (accounts + live collaboration)
+
+Optional third backend. With it, scripts live on your own server, several people
+can edit the same script **at the same time**, and edits merge without anyone
+overwriting anyone — the document is a CRDT (Yjs), not a file being raced over.
+
+The app picks its backend at startup, in this order:
+
+| Condition | Backend |
+|---|---|
+| A server answers `/api/tree` on this origin | the local Python server (`python server.py`) |
+| `static/config.js` names a cloud API and you sign in | the cloud backend |
+| neither | the offline IndexedDB store |
+
+Declining the sign-in prompt lands you on the offline store, so **an account is
+only ever needed to collaborate — never to use the app.** Leaving
+`static/config.js` empty removes cloud mode entirely.
+
+Signing in is invite-only: there is no public registration endpoint. You create
+the first account on the server with `create-user.js`, and everyone after that
+gets an invite link from the Share dialog.
+
+To set it up, see [`server-node/deploy/README-deploy.md`](server-node/deploy/README-deploy.md).
+It needs a domain, a Postgres database, and two pm2 services on a VPS. For why it
+is built the way it is — the decisions, the trade-offs, and how far the tests go —
+see [`docs/cloud-architecture.html`](docs/cloud-architecture.html) — open it in a
+browser for the diagrams — or the same material as prose in
+[`docs/cloud-architecture.md`](docs/cloud-architecture.md).
+
+What changes when you are signed in:
+
+- **Live editing.** Everyone's text syncs as they type; collaborator initials
+  appear in the toolbar. Remote carets are not drawn inside the editor.
+- **Undo is yours alone.** Ctrl+Z reverts only your own edits, never a
+  collaborator's.
+- **Save means "mark a version".** Your text is already saved continuously, so
+  Ctrl+S records a named version instead — which is what the history panel then
+  lists. Because a CRDT merges concurrent edits, the "changed on disk" conflict
+  prompt never appears.
+- **Sharing.** Scripts other people shared with you appear under `Shared/`.
+  Access is `editor` or `viewer`; a viewer's writes are refused by the server,
+  not just hidden in the UI.
+
 ## Layout
 
 ```
-Screenplay_Reader/
+Faaglarna/
   server.py               # HTTP server (file CRUD, history, exports, fdx import)
   fountain.py             # parser (Python, drives PDF + fdx)
   pdf_layout.py           # ReportLab layout per format
@@ -132,10 +178,25 @@ Screenplay_Reader/
     fountain.js           # parser (JS — canonical, drives the renderer)
     pagination.js         # page layout (drives on-screen pages + print)
     app.js                # frontend logic
-    backend.js            # static-mode store (IndexedDB) + print export; inert under the server
+    backend.js            # picks the backend; offline store (IndexedDB) + print export
+    config.js             # where the cloud API lives (empty = cloud mode off)
+    cloud.js              # accounts, sharing, collaboration lifecycle
+    collab.js             # Y.Text <-> textarea binding
+    vendor/
+      collab-bundle.js    # generated: Yjs + Hocuspocus provider (see collab/)
     index.html
     style.css
     icon.svg
+  server-node/            # the cloud backend (optional — see Cloud mode)
+    server.js             # REST API, same /api/* contract as server.py
+    db.js  auth.js  docs.js  collab.js
+    deploy/README-deploy.md
+  export-service/         # stateless PDF/FDX sidecar; reuses the modules above
+    export_server.py
+  collab/                 # build + tests for the browser Yjs bundle
+  docs/
+    cloud-architecture.html # why the cloud backend looks like this (with diagrams)
+    cloud-architecture.md   # the same, as prose
   .github/workflows/
     pages.yml             # deploys static/ to GitHub Pages
 ```
@@ -153,9 +214,37 @@ python tests/fountain/test_python.py
 Adding new Fountain syntax requires changes in both `static/fountain.js`
 and `fountain.py`; the shared fixtures catch drift.
 
+The cloud backend has its own suites, and neither needs a database server or a
+network — they run against an in-process Postgres (PGlite) and real local
+WebSockets:
+
+```
+cd server-node && npm install && npm test    # REST API + collaboration server
+cd collab      && npm install && npm test    # the Y.Text <-> textarea binding
+```
+
+Add `EXPORT_SERVICE_URL=http://127.0.0.1:3002` with the sidecar running
+(`python export-service/export_server.py`) to also cover real PDF/FDX rendering.
+
+`static/vendor/collab-bundle.js` is generated and committed, so the frontend
+still needs no build step. Regenerate it after changing the pinned versions:
+
+```
+cd collab && npm run build
+```
+
 ## Dependencies
 
-- Python ≥ 3.10
-- `reportlab` (PDF export)
+The app itself, as always:
 
-No client-side dependencies — the frontend is hand-written vanilla JS.
+- Python ≥ 3.10
+- `reportlab` (PDF export) — the only third-party Python package
+- No client-side dependencies. The frontend is hand-written vanilla JS and
+  loads as plain scripts, with no build step.
+
+Only if you run the **cloud backend**:
+
+- Node ≥ 20, PostgreSQL ≥ 15
+- `express`, `pg`, `yjs`, `@hocuspocus/server` (all MIT)
+- Yjs reaches the browser through the committed bundle above, fetched on demand
+  so offline visitors never download it.
