@@ -178,100 +178,32 @@ ls -lh /var/backups/faaglarna        # a .sql.gz must appear
 `doc_state.ydoc` is `BYTEA`, which `pg_dump` handles fine. Restore-test the
 first dump into a scratch database so you know the rollback works.
 
-## 10b. Off-site copy of the backups (rclone -> OneDrive)
+## 10b. Off-site copy of the backups - NOT set up, deliberately
 
 `/var/backups` and `/var/lib/postgresql` are the same filesystem, so the nightly
-dumps survive a bad migration but not a lost VM. For Faaglarna that gap matters
-more than for Ukeportalen: `doc_state.ydoc` is the **only** copy of every script.
+dumps survive a bad migration but not a lost VM. For Faaglarna that gap is real:
+`doc_state.ydoc` is the **only** copy of every script.
 
-> **Do not use `apt install rclone`.** Ubuntu ships a 2022-era build (v1.60.1)
-> that fails against Microsoft's current OneDrive upload API with
-> `unauthenticated: Unauthenticated` - while `lsd`, `about` and even `mkdir`
-> keep working, so it looks like an auth problem rather than a stale binary.
-> Use rclone's own installer:
+An rclone push to personal OneDrive was built and then **rolled back**. The
+reason is worth recording, because the pull to just redo it will be strong:
 
-```bash
-curl https://rclone.org/install.sh | sudo bash
-rclone version        # v1.75.0 or newer
-```
+> rclone's OneDrive token is **drive-wide**. Microsoft's OAuth scopes work at
+> the drive level, so there is no way to confine it to one folder -
+> `Files.ReadWrite.AppFolder`, the nearest thing, confines an app to
+> `/Apps/<name>`, a directory Microsoft chooses. An `alias` remote bounds
+> accidents but is not a security boundary: the full-drive token still sits in
+> `~/.config/rclone/rclone.conf`, and anyone with root on this VPS has the whole
+> personal drive. Trading that exposure for a few KB of nightly dumps is a bad
+> deal.
 
-Then authorise a remote **as `admin`, not root or postgres** - rclone stores its
-config in the running user's home, and the cron entry runs as `admin`.
+If you want off-site copies, use a destination that supports **scoped
+credentials** instead - object storage with a per-bucket, write-only key, so a
+compromised VPS can add backups but cannot read or delete existing ones.
+Backblaze B2, Cloudflare R2 and Hetzner all do this, rclone speaks S3 natively,
+and a few KB a night costs approximately nothing.
 
-The VPS has no browser, so forward rclone's OAuth callback port from your
-laptop and let your own browser do the login:
-
-```bash
-# from your laptop - keep this session open while configuring
-ssh -L 53682:localhost:53682 admin@api-faaglarna.lektorensrud.no
-```
-
-In that session run `rclone config` and answer:
-
-| Prompt | Answer |
-|---|---|
-| `n) New remote` | `n` |
-| `name>` | `onedrive-personal` |
-| `Storage>` | `onedrive` (Microsoft OneDrive) |
-| `client_id>` / `client_secret>` | blank |
-| `region>` | `1` (global) |
-| `Edit advanced config?` | `n` |
-| `Use web browser to automatically authenticate?` | `y` - the port-forward makes this work |
-| `Type of connection>` | `onedrive` (Personal or Business) |
-| drive list | pick the **personal** drive |
-
-> **Sign in with the personal Microsoft account, not the work one.** Your browser
-> is probably already signed into the DGI account, and rclone will silently take
-> whichever it is handed. Use a private window for the login step.
-
-Confirm which account you actually got before trusting it:
-
-```bash
-rclone about onedrive-personal:
-rclone lsd  onedrive-personal:
-```
-
-Then create an `alias` remote scoped to the backup subtree, and point the script
-at that rather than at the full drive:
-
-```bash
-rclone config create onedrive-backups alias     remote onedrive-personal:Backups/faaglarna-vps
-```
-
-This bounds what a bug or a typo in the script can reach. It is **not** a
-security boundary - the full-drive remote is still in the same config file, and
-the OAuth token it holds is drive-wide. Microsoft's scopes are drive-level, so
-confining a token to one chosen folder is not possible; the nearest thing,
-`Files.ReadWrite.AppFolder`, confines an app to `/Apps/<name>`, a folder
-Microsoft picks. If that matters, push to object storage with a scoped
-write-only key instead of to personal OneDrive.
-
-Install the push script and test it:
-
-```bash
-sudo cp /srv/faaglarna-api/deploy/offsite-backup.sh /usr/local/bin/offsite-backup.sh
-sudo chmod +x /usr/local/bin/offsite-backup.sh
-
-/usr/local/bin/offsite-backup.sh --dry-run     # read what it says it would do
-/usr/local/bin/offsite-backup.sh
-rclone ls onedrive-personal:Backups/faaglarna-vps/faaglarna
-```
-
-Schedule it as `admin` (**not** postgres - that user has no home for the config):
-
-```bash
-crontab -e
-# 03:10, after the 02:40 dump has finished:
-10 3 * * * /usr/local/bin/offsite-backup.sh >> /home/admin/offsite-backup.log 2>&1
-```
-
-Two deliberate choices in that script:
-
-- **`rclone copy`, not `sync`.** `sync` would mirror the local 30-day pruning to
-  OneDrive and delete the older copies, which defeats the point. Remote
-  retention is handled separately, at 90 days.
-- **It fails loudly if the remote is unreachable.** An expired OAuth token would
-  otherwise mean months of silently copying nothing.
+Until then the dumps are local-only. That is a known, accepted gap - not an
+oversight.
 
 ## 11. Monitoring
 
