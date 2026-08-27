@@ -178,6 +178,79 @@ ls -lh /var/backups/faaglarna        # a .sql.gz must appear
 `doc_state.ydoc` is `BYTEA`, which `pg_dump` handles fine. Restore-test the
 first dump into a scratch database so you know the rollback works.
 
+## 10b. Off-site copy of the backups (rclone -> OneDrive)
+
+`/var/backups` and `/var/lib/postgresql` are the same filesystem, so the nightly
+dumps survive a bad migration but not a lost VM. For Faaglarna that gap matters
+more than for Ukeportalen: `doc_state.ydoc` is the **only** copy of every script.
+
+```bash
+sudo apt install -y rclone
+```
+
+Then authorise a remote **as `admin`, not root or postgres** - rclone stores its
+config in the running user's home, and the cron entry runs as `admin`.
+
+The VPS has no browser, so forward rclone's OAuth callback port from your
+laptop and let your own browser do the login:
+
+```bash
+# from your laptop - keep this session open while configuring
+ssh -L 53682:localhost:53682 admin@api-faaglarna.lektorensrud.no
+```
+
+In that session run `rclone config` and answer:
+
+| Prompt | Answer |
+|---|---|
+| `n) New remote` | `n` |
+| `name>` | `onedrive-personal` |
+| `Storage>` | `onedrive` (Microsoft OneDrive) |
+| `client_id>` / `client_secret>` | blank |
+| `region>` | `1` (global) |
+| `Edit advanced config?` | `n` |
+| `Use web browser to automatically authenticate?` | `y` - the port-forward makes this work |
+| `Type of connection>` | `onedrive` (Personal or Business) |
+| drive list | pick the **personal** drive |
+
+> **Sign in with the personal Microsoft account, not the work one.** Your browser
+> is probably already signed into the DGI account, and rclone will silently take
+> whichever it is handed. Use a private window for the login step.
+
+Confirm which account you actually got before trusting it:
+
+```bash
+rclone about onedrive-personal:
+rclone lsd  onedrive-personal:
+```
+
+Install the push script and test it:
+
+```bash
+sudo cp /srv/faaglarna-api/deploy/offsite-backup.sh /usr/local/bin/offsite-backup.sh
+sudo chmod +x /usr/local/bin/offsite-backup.sh
+
+/usr/local/bin/offsite-backup.sh --dry-run     # read what it says it would do
+/usr/local/bin/offsite-backup.sh
+rclone ls onedrive-personal:Backups/faaglarna-vps/faaglarna
+```
+
+Schedule it as `admin` (**not** postgres - that user has no home for the config):
+
+```bash
+crontab -e
+# 03:10, after the 02:40 dump has finished:
+10 3 * * * /usr/local/bin/offsite-backup.sh >> /home/admin/offsite-backup.log 2>&1
+```
+
+Two deliberate choices in that script:
+
+- **`rclone copy`, not `sync`.** `sync` would mirror the local 30-day pruning to
+  OneDrive and delete the older copies, which defeats the point. Remote
+  retention is handled separately, at 90 days.
+- **It fails loudly if the remote is unreachable.** An expired OAuth token would
+  otherwise mean months of silently copying nothing.
+
 ## 11. Monitoring
 
 UptimeRobot keyword monitor on `https://api-faaglarna.lektorensrud.no/api/ready`, alerting when the
