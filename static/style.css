@@ -1010,3 +1010,14 @@ body.theme-dark .cloud-error { color: #f7a0a0; }
 
 /* A read-only collaborator still sees the source, but cannot type into it. */
 body.cloud-mode .editor[readonly] { background: var(--sidebar); cursor: default; }
+
+/* Sub-heading inside the account dialog, separating identity from the
+   password form. */
+.cloud-subhead {
+  font: 600 13px/1 var(--sans);
+  text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted);
+  margin: 1.2rem 0 0.7rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--rule);
+}

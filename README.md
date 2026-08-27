@@ -157,6 +157,11 @@ What changes when you are signed in:
 - **Sharing.** Scripts other people shared with you appear under `Shared/`.
   Access is `editor` or `viewer`; a viewer's writes are refused by the server,
   not just hidden in the UI.
+- **Your account.** The initial in the toolbar opens a dialog to change your
+  password or sign out. Changing it requires the current one and signs you out
+  everywhere else, so it doubles as "evict whoever else is signed in as me".
+  There is no email-based reset: a forgotten password is recovered by re-running
+  `create-user.js` on the server.
 
 ## Layout
 

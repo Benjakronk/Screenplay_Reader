@@ -264,8 +264,8 @@ window.Cloud = (function () {
     acct.className = 'icon-btn';
     acct.id = 'btn-account';
     acct.textContent = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase();
-    acct.title = `Signed in as ${user?.email || 'unknown'} — click to sign out`;
-    acct.onclick = () => { if (confirm(`Sign out of ${user?.email}?`)) logout(); };
+    acct.title = `Signed in as ${user?.email || 'unknown'}`;
+    acct.onclick = openAccountDialog;
 
     actions.insertBefore(peersEl, actions.firstChild);
     actions.insertBefore(statusEl, actions.firstChild);
@@ -395,6 +395,76 @@ window.Cloud = (function () {
         .catch(() => fail('That invitation link is invalid or has expired.'));
     }
     setTimeout(() => $('cloud-email').focus(), 0);
+  }
+
+  // Who you are, changing your password, and signing out. Reached from the
+  // initial in the toolbar.
+  function openAccountDialog() {
+    const root = modal(`
+      <div class="modal">
+        <div class="modal-head">
+          <h3>Your account</h3>
+          <button class="icon-btn" id="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="cloud-hint">Signed in as <strong>${esc(user?.email || '')}</strong>${
+            user?.name ? ' &middot; ' + esc(user.name) : ''}</p>
+
+          <h4 class="cloud-subhead">Change password</h4>
+          <label class="cloud-field">Current password<input id="pw-current" type="password"
+            autocomplete="current-password" /></label>
+          <label class="cloud-field">New password<input id="pw-new" type="password"
+            autocomplete="new-password" /></label>
+          <label class="cloud-field">Repeat new password<input id="pw-again" type="password"
+            autocomplete="new-password" /></label>
+          <p class="cloud-hint">At least 10 characters. Changing it signs you out
+             everywhere else, but keeps you signed in here.</p>
+          <p id="pw-error" class="cloud-error hidden"></p>
+          <p id="pw-ok" class="cloud-hint hidden"></p>
+
+          <div class="modal-actions">
+            <button id="acct-signout" class="ghost">Sign out</button>
+            <button id="pw-save" class="primary">Change password</button>
+          </div>
+        </div>
+      </div>`);
+
+    const err = $('pw-error'), ok = $('pw-ok');
+    const fail = (m) => { ok.classList.add('hidden'); err.textContent = m; err.classList.remove('hidden'); };
+
+    $('acct-signout').onclick = () => {
+      if (confirm(`Sign out of ${user?.email}?`)) logout();
+    };
+
+    $('pw-save').onclick = async () => {
+      const cur = $('pw-current').value;
+      const nw = $('pw-new').value;
+      const again = $('pw-again').value;
+      if (!cur || !nw) return fail('Fill in your current and new password.');
+      if (nw !== again) return fail('The two new passwords do not match.');
+      if (nw.length < 10) return fail('The new password must be at least 10 characters.');
+
+      $('pw-save').disabled = true;
+      try {
+        const out = await api('/api/password', {
+          method: 'POST', body: { currentPassword: cur, newPassword: nw },
+        });
+        err.classList.add('hidden');
+        ok.textContent = out.otherSessionsEnded
+          ? `Password changed. ${out.otherSessionsEnded} other session(s) signed out.`
+          : 'Password changed.';
+        ok.classList.remove('hidden');
+        for (const id of ['pw-current', 'pw-new', 'pw-again']) $(id).value = '';
+        notify('Password changed');
+      } catch (e) {
+        fail(e.message);
+      } finally {
+        $('pw-save').disabled = false;
+      }
+    };
+
+    $('pw-again').onkeydown = (e) => { if (e.key === 'Enter') $('pw-save').click(); };
+    setTimeout(() => $('pw-current').focus(), 0);
   }
 
   async function openShareDialog() {
@@ -527,7 +597,8 @@ window.Cloud = (function () {
 
   return {
     enabled, active, probe, login, logout, acceptInvite, authHeaders, api,
-    adaptUi, wrapApp, openSignInDialog, openShareDialog, joinDocument, leaveDocument,
+    adaptUi, wrapApp, openSignInDialog, openShareDialog, openAccountDialog,
+    joinDocument, leaveDocument,
     importBackup,
     get base() { return base; },
     get user() { return user; },

@@ -120,6 +120,65 @@ async function main() {
     assert.equal((await GET('/api/tree', { as: 'deadbeef' })).status, 401);
   });
 
+  // --------------------------------------------------------- password change
+  section('changing your own password');
+  const NEWPW = 'a-different-long-password';
+  let secondToken = '';
+  await test('a second session exists before the change', async () => {
+    const r = await POST('/api/login', { email: 'ben@example.no', password: 'a-long-enough-password' });
+    assert.equal(r.status, 200);
+    secondToken = r.data.token;
+    assert.notEqual(secondToken, benToken);
+  });
+  await test('the wrong current password is refused', async () => {
+    const r = await POST('/api/password',
+      { currentPassword: 'not-it', newPassword: NEWPW }, { as: benToken });
+    assert.equal(r.status, 401);
+  });
+  await test('a too-short new password is refused', async () => {
+    const r = await POST('/api/password',
+      { currentPassword: 'a-long-enough-password', newPassword: 'short' }, { as: benToken });
+    assert.equal(r.status, 400);
+  });
+  await test('reusing the current password is refused', async () => {
+    const r = await POST('/api/password',
+      { currentPassword: 'a-long-enough-password', newPassword: 'a-long-enough-password' },
+      { as: benToken });
+    assert.equal(r.status, 400);
+  });
+  await test('an unauthenticated change is refused', async () => {
+    const r = await POST('/api/password', { currentPassword: 'x', newPassword: NEWPW });
+    assert.equal(r.status, 401);
+  });
+  await test('the change succeeds and reports evicted sessions', async () => {
+    const r = await POST('/api/password',
+      { currentPassword: 'a-long-enough-password', newPassword: NEWPW }, { as: benToken });
+    assert.equal(r.status, 200, r.data && r.data.error);
+    assert.ok(r.data.otherSessionsEnded >= 1, 'other sessions were not ended');
+  });
+  await test('the new password works at login', async () => {
+    const r = await POST('/api/login', { email: 'ben@example.no', password: NEWPW });
+    assert.equal(r.status, 200);
+  });
+  await test('the old password no longer works', async () => {
+    const r = await POST('/api/login', { email: 'ben@example.no', password: 'a-long-enough-password' });
+    assert.equal(r.status, 401);
+  });
+  await test('the session that made the change is still valid', async () => {
+    const r = await GET('/api/me', { as: benToken });
+    assert.equal(r.status, 200);
+  });
+  await test('the OTHER session was signed out', async () => {
+    const r = await GET('/api/me', { as: secondToken });
+    assert.equal(r.status, 401);
+  });
+  await test('the stored hash actually changed and is still scrypt', async () => {
+    const { rows } = await db.query('SELECT password_hash FROM users WHERE email=$1', ['ben@example.no']);
+    assert.ok(rows[0].password_hash.startsWith('scrypt$'));
+    assert.ok(await auth.verifyPassword(NEWPW, rows[0].password_hash));
+    assert.ok(!(await auth.verifyPassword('a-long-enough-password', rows[0].password_hash)));
+  });
+
   // --------------------------------------------------------------- documents
   section('documents');
   await test('a new script appears in the tree', async () => {

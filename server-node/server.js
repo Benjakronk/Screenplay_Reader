@@ -206,6 +206,39 @@ app.get('/api/me', auth.requireUser, (req, res) => {
   res.json({ user: req.user });
 });
 
+// Change your own password. Requires the current one even though the session is
+// already authenticated: a borrowed session should not be enough to lock the
+// real owner out of their account.
+app.post('/api/password', auth.requireUser, async (req, res) => {
+  try {
+    const current = String(req.body?.currentPassword || '');
+    const next = String(req.body?.newPassword || '');
+    if (next.length < 10) {
+      return res.status(400).json({ error: 'new password must be at least 10 characters' });
+    }
+    if (next === current) {
+      return res.status(400).json({ error: 'that is already your password' });
+    }
+
+    const { rows } = await query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
+    if (!rows[0] || !(await auth.verifyPassword(current, rows[0].password_hash))) {
+      return res.status(401).json({ error: 'current password is wrong' });
+    }
+
+    await query('UPDATE users SET password_hash=$1 WHERE id=$2',
+      [await auth.hashPassword(next), req.user.id]);
+
+    // Changing a password is also how you evict someone. End every OTHER
+    // session, keeping the one making the request so the user is not signed out
+    // of the tab they are standing in.
+    const keep = auth.tokenHash(auth.bearerToken(req));
+    const { rowCount } = await query(
+      'DELETE FROM sessions WHERE user_id=$1 AND token_hash <> $2', [req.user.id, keep]);
+
+    res.json({ ok: true, otherSessionsEnded: rowCount });
+  } catch (err) { fail(res, err, 500); }
+});
+
 // Create an invite. Optionally scoped to one document, which pre-grants access
 // so "share this script with Alex" is a single link.
 app.post('/api/invite', auth.requireUser, async (req, res) => {
