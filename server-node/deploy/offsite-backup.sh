@@ -25,10 +25,21 @@
 
 set -euo pipefail
 
-# The rclone remote created by `rclone config`. Named for the account it points
-# at, so a work/personal mix-up is visible rather than silent.
-REMOTE="${OFFSITE_REMOTE:-onedrive-personal}"
-REMOTE_DIR="${OFFSITE_DIR:-Backups/faaglarna-vps}"
+# Readable cwd for any invoking user - see backup-faaglarna.sh for why.
+cd /
+
+# An `alias` remote scoped to the backup subtree, NOT the full-drive remote:
+#
+#   rclone config create onedrive-backups alias #       remote onedrive-personal:Backups/faaglarna-vps
+#
+# This bounds the blast radius of a bug or a typo in this script - nothing above
+# Backups/faaglarna-vps is addressable through it. It is NOT a security boundary:
+# onedrive-personal: still exists in the same config, and anyone who can read
+# rclone.conf holds a full-drive token. Microsoft's OAuth scopes are drive-level,
+# so a real per-folder restriction is not available (Files.ReadWrite.AppFolder
+# confines an app to /Apps/<name>, a folder Microsoft chooses, not one you do).
+REMOTE="${OFFSITE_REMOTE:-onedrive-backups}"
+REMOTE_DIR="${OFFSITE_DIR:-}"
 
 # Databases to push. Add "ukeportalen" here to cover it too - it has the same
 # off-box gap.
@@ -52,7 +63,7 @@ fi
 
 for DB in "${DBS[@]}"; do
   SRC="/var/backups/${DB}"
-  DEST="${REMOTE}:${REMOTE_DIR}/${DB}"
+  DEST="${REMOTE}:${REMOTE_DIR:+${REMOTE_DIR}/}${DB}"
 
   if [ ! -d "$SRC" ]; then
     echo "$(date '+%F %T') skip ${DB}: ${SRC} does not exist"

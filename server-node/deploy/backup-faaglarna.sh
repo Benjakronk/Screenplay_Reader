@@ -32,6 +32,14 @@
 
 set -euo pipefail
 
+# Run from a directory every user can read. Invoked by hand as
+# `sudo -u postgres ...` from an admin shell, the cwd is /home/admin (0700), and
+# `find` fails with "Failed to restore initial working directory" - after the
+# dump is safely written, but before the prune, so `set -e` aborts the script and
+# it looks like the backup failed when it did not. Cron does not hit this
+# (postgres's own home is world-readable), but the documented by-hand test does.
+cd /
+
 DB="faaglarna"
 DIR="/var/backups/faaglarna"
 KEEP_DAYS=30

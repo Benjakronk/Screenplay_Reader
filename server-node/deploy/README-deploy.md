@@ -184,8 +184,15 @@ first dump into a scratch database so you know the rollback works.
 dumps survive a bad migration but not a lost VM. For Faaglarna that gap matters
 more than for Ukeportalen: `doc_state.ydoc` is the **only** copy of every script.
 
+> **Do not use `apt install rclone`.** Ubuntu ships a 2022-era build (v1.60.1)
+> that fails against Microsoft's current OneDrive upload API with
+> `unauthenticated: Unauthenticated` - while `lsd`, `about` and even `mkdir`
+> keep working, so it looks like an auth problem rather than a stale binary.
+> Use rclone's own installer:
+
 ```bash
-sudo apt install -y rclone
+curl https://rclone.org/install.sh | sudo bash
+rclone version        # v1.75.0 or newer
 ```
 
 Then authorise a remote **as `admin`, not root or postgres** - rclone stores its
@@ -223,6 +230,21 @@ Confirm which account you actually got before trusting it:
 rclone about onedrive-personal:
 rclone lsd  onedrive-personal:
 ```
+
+Then create an `alias` remote scoped to the backup subtree, and point the script
+at that rather than at the full drive:
+
+```bash
+rclone config create onedrive-backups alias     remote onedrive-personal:Backups/faaglarna-vps
+```
+
+This bounds what a bug or a typo in the script can reach. It is **not** a
+security boundary - the full-drive remote is still in the same config file, and
+the OAuth token it holds is drive-wide. Microsoft's scopes are drive-level, so
+confining a token to one chosen folder is not possible; the nearest thing,
+`Files.ReadWrite.AppFolder`, confines an app to `/Apps/<name>`, a folder
+Microsoft picks. If that matters, push to object storage with a scoped
+write-only key instead of to personal OneDrive.
 
 Install the push script and test it:
 
