@@ -67,7 +67,7 @@ backend.
 ```
 GitHub Pages (static/)                    Netcup VPS
 ┌──────────────────────┐                  ┌─────────────────────────────────────┐
-│ app.js  (unchanged)  │                  │ nginx :443   <API_DOMAIN>           │
+│ app.js  (unchanged)  │                  │ nginx :443  api-faaglarna.lektorensrud.no│
 │   fetch('/api/...')  │   HTTPS          │   ├─ /        ──► Node :3001        │
 │        │             │─────────────────►│   └─ /collab/ ──► Node :3003 (WS)   │
 │   backend.js shim ───┤                  │                                     │
@@ -198,7 +198,10 @@ synchronous KDF would stall every connected editor for the duration of a login.
 The frontend is on `*.github.io` and the API on its own domain, so a session
 cookie is a third-party cookie and is blocked by default in current browsers.
 (Ukeportalen can use cookies because `ukeportalen.no` and `api.ukeportalen.no`
-share a registrable domain.) A token in `localStorage` plus an `Authorization`
+share a registrable domain. Faaglarna's domains now share one too —
+`lektorensrud.no` — so cookies would in fact work, but the bearer token is kept:
+it also works from the `*.github.io` origin, needs no credentialed CORS, and is
+one less thing to get wrong.) A token in `localStorage` plus an `Authorization`
 header sidesteps this, and means CORS needs no credentialed mode.
 
 Tokens — sessions and invites alike — are stored only as SHA-256. A database
@@ -321,8 +324,9 @@ rewrite, auth header), `static/index.html` (script tags), `static/style.css`
 
 ## Open items
 
-- **`<API_DOMAIN>` is unchosen.** certbot's HTTP-01 challenge needs a live
-  A-record, so this gates provisioning.
+- **Domains are chosen** — `api-faaglarna.lektorensrud.no` for the API and
+  `faaglarna.lektorensrud.no` for the frontend. DNS still has to be
+  created and propagate before certbot will succeed.
 - **Phase 5 (operations) is documented but not executed** — the nightly
   `pg_dump` of `faaglarna`, the restore test, and the UptimeRobot monitor on
   `/api/ready` all need the server.

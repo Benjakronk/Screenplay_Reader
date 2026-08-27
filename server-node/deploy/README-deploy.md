@@ -19,18 +19,18 @@ nginx, PostgreSQL 17) is shared and already done.
 for p in 3001 3002 3003; do echo -n "$p: "; sudo ss -ltnp | grep -c ":$p" ; done   # all 0
 ```
 
-## 0. Pick a domain
+## 0. Domains
 
-`<DOMAIN>` is the only thing this repo does not decide for you — e.g.
+`api-faaglarna.lektorensrud.no` is the only thing this repo does not decide for you — e.g.
 `api.faaglarna.no`. It must be a name you control in Domeneshop.
 
 ## 1. DNS first (certbot depends on it)
 
-Add an **A record** for `<DOMAIN>` pointing at the same VPS IPv4 as
+Add an **A record** for `api-faaglarna.lektorensrud.no` pointing at the same VPS IPv4 as
 `api.ukeportalen.no`. Lower the TTL to 300s beforehand. Verify before continuing:
 
 ```bash
-dig +short <DOMAIN>        # must print the VPS IPv4  (nslookup on Windows)
+dig +short api-faaglarna.lektorensrud.no        # must print the VPS IPv4  (nslookup on Windows)
 ```
 
 ## 2. Database
@@ -62,14 +62,14 @@ scp -r server-node/server.js server-node/db.js server-node/auth.js `
        server-node/docs.js server-node/collab.js server-node/create-user.js `
        server-node/package.json server-node/package-lock.json `
        server-node/.env.example server-node/deploy `
-       admin@<DOMAIN>:/srv/faaglarna-api/
+       admin@api-faaglarna.lektorensrud.no:/srv/faaglarna-api/
 
 # the export sidecar needs its own file plus the four Fountain modules from the
 # repo root — they are imported unchanged, never duplicated
 scp export-service/export_server.py export-service/requirements.txt `
        fountain.py fdx.py pdf_layout.py pagination.py `
-       admin@<DOMAIN>:/srv/faaglarna-export/
-scp -r export-service/deploy admin@<DOMAIN>:/srv/faaglarna-export/
+       admin@api-faaglarna.lektorensrud.no:/srv/faaglarna-export/
+scp -r export-service/deploy admin@api-faaglarna.lektorensrud.no:/srv/faaglarna-export/
 ```
 
 `.env` is never in the copy list, so a redeploy never overwrites your secrets.
@@ -120,11 +120,10 @@ pm2 save
 ## 7. nginx + TLS
 
 ```bash
-sudo cp deploy/nginx-faaglarna.conf /etc/nginx/sites-available/<DOMAIN>
-sudo sed -i 's/<DOMAIN>/<DOMAIN>/g' /etc/nginx/sites-available/<DOMAIN>
-sudo ln -s /etc/nginx/sites-available/<DOMAIN> /etc/nginx/sites-enabled/
+sudo cp deploy/nginx-faaglarna.conf /etc/nginx/sites-available/api-faaglarna.lektorensrud.no
+sudo ln -s /etc/nginx/sites-available/api-faaglarna.lektorensrud.no /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d <DOMAIN>
+sudo certbot --nginx -d api-faaglarna.lektorensrud.no
 ```
 
 > **This config is NOT the generic template.** A WebSocket needs the
@@ -136,7 +135,7 @@ sudo certbot --nginx -d <DOMAIN>
 Verify from outside:
 
 ```bash
-curl -s https://<DOMAIN>/api/health
+curl -s https://api-faaglarna.lektorensrud.no/api/health
 ```
 
 ## 8. Create the first account
@@ -157,7 +156,7 @@ flow, so this is also the password-reset path.
 In `static/config.js`:
 
 ```js
-window.FAAGLARNA_CLOUD = 'https://<DOMAIN>';
+window.FAAGLARNA_CLOUD = 'https://api-faaglarna.lektorensrud.no';
 ```
 
 Commit and push; GitHub Pages redeploys. Leaving it empty disables cloud mode
@@ -181,7 +180,7 @@ first dump into a scratch database so you know the rollback works.
 
 ## 11. Monitoring
 
-UptimeRobot keyword monitor on `https://<DOMAIN>/api/ready`, alerting when the
+UptimeRobot keyword monitor on `https://api-faaglarna.lektorensrud.no/api/ready`, alerting when the
 body does not contain `ready`. That endpoint runs a real query, so a 200 means
 Postgres is genuinely reachable.
 
@@ -192,7 +191,7 @@ status` shows it.
 ## Updating later
 
 ```powershell
-scp server-node/server.js server-node/db.js ... admin@<DOMAIN>:/srv/faaglarna-api/
+scp server-node/server.js server-node/db.js ... admin@api-faaglarna.lektorensrud.no:/srv/faaglarna-api/
 ```
 ```bash
 cd /srv/faaglarna-api
@@ -235,9 +234,9 @@ cover real PDF/FDX rendering.
 
 ```bash
 pm2 delete faaglarna-api faaglarna-export && pm2 save
-sudo rm /etc/nginx/sites-enabled/<DOMAIN> /etc/nginx/sites-available/<DOMAIN>
+sudo rm /etc/nginx/sites-enabled/api-faaglarna.lektorensrud.no /etc/nginx/sites-available/api-faaglarna.lektorensrud.no
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot delete --cert-name <DOMAIN>
+sudo certbot delete --cert-name api-faaglarna.lektorensrud.no
 # after a final backup: sudo -u postgres dropdb faaglarna
 ```
 

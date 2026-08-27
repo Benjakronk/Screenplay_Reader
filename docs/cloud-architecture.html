@@ -735,7 +735,10 @@ fdx.fdx_to_fountain(xml)                    -&gt; str</code></pre>
             The frontend is on <code>*.github.io</code> and the API on its own domain, so a session
             cookie is a third-party cookie and is blocked by default in current browsers.
             Ukeportalen can use cookies only because <code>ukeportalen.no</code> and
-            <code>api.ukeportalen.no</code> share a registrable domain.
+            <code>api.ukeportalen.no</code> share a registrable domain. Faaglarna's own domains
+            now share one too (<code>lektorensrud.no</code>), so cookies would in fact work &mdash;
+            but the bearer token is kept: it also works from the <code>*.github.io</code> origin,
+            needs no credentialed CORS, and is one less thing to get wrong.
           </p>
           <p>
             A token in <code>localStorage</code> plus an <code>Authorization</code> header sidesteps this, and
@@ -942,9 +945,10 @@ doc_versions (id, doc_id, name, timestamp, content, author_id, created_at)</code
         <h2 class="sec">Open items</h2>
         <ul>
           <li>
-            <strong>The API domain is unchosen.</strong> certbot's HTTP-01 challenge needs a live
-            A-record, so this gates provisioning — nothing else can start until it exists.
-          </li>
+                        <strong>Domains are chosen but DNS is not created yet.</strong> The frontend is
+            <code>faaglarna.lektorensrud.no</code> (a CNAME to GitHub Pages) and the API is
+            <code>api-faaglarna.lektorensrud.no</code> (an A record to the VPS). certbot's
+            HTTP-01 challenge needs the A record live before it will succeed.</li>
           <li>
             <strong>Operations are documented but not executed</strong> — the nightly <code>pg_dump</code> of
             <code>faaglarna</code>, the restore test, and the UptimeRobot monitor on <code>/api/ready</code> all
