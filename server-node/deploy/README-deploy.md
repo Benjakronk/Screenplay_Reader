@@ -80,7 +80,7 @@ scp -r export-service/deploy admin@api-faaglarna.lektorensrud.no:/srv/faaglarna-
 cd /srv/faaglarna-api && npm ci --omit=dev
 
 cd /srv/faaglarna-export
-sudo apt install -y python3-venv          # usually already present
+sudo apt install -y python3.13-venv     # match your python3 -V; REQUIRED
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt   # ReportLab, the only dependency
 ```
@@ -103,7 +103,7 @@ The export sidecar has no `.env`: it holds no secrets and reaches no database.
 
 ```bash
 cd /srv/faaglarna-export && pm2 start deploy/ecosystem.config.cjs
-curl -s -X POST http://127.0.0.1:3002/health          # -> {"ok": true}
+curl -s http://127.0.0.1:3002/health          # -> {"ok": true}
 
 cd /srv/faaglarna-api && pm2 start deploy/ecosystem.config.cjs
 pm2 logs faaglarna-api --lines 20 --nostream

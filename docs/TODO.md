@@ -131,7 +131,7 @@ scp -r export-service/deploy admin@api-faaglarna.lektorensrud.no:/srv/faaglarna-
 
 ```bash
 cd /srv/faaglarna-export
-sudo apt install -y python3-venv        # usually already there
+sudo apt install -y python3.13-venv     # match your python3 -V; REQUIRED
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
 ```
@@ -158,7 +158,7 @@ The sidecar has no `.env` — it holds no secrets and reaches no database.
 
 ```bash
 cd /srv/faaglarna-export && pm2 start deploy/ecosystem.config.cjs
-curl -s -X POST http://127.0.0.1:3002/health        # -> {"ok": true}
+curl -s http://127.0.0.1:3002/health        # -> {"ok": true}
 ```
 
 - [ ] Then the API:
@@ -246,6 +246,9 @@ Setting it back to `''` is the instant rollback — no server change needed.
 - [ ] Open the same script in a private window as a second account, type in both,
       confirm the text merges and neither caret jumps.
 - [ ] Export a PDF and an `.fdx` from the hosted app.
+      (Do not expect these to be byte-identical to a locally generated PDF:
+      the server has ReportLab 5.0.1 and this laptop has 4.5.1. Same content,
+      possibly different bytes.)
 - [ ] Share a script, accept the invite link, confirm it appears under `Shared/`.
 - [ ] Set that collaborator to viewer, confirm they cannot type.
 
