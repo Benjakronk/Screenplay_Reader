@@ -2676,7 +2676,20 @@ function configTaMirror(ta) {
   // cs.width is the content-box width even under border-box; force border-box so
   // the copied padding/border don't widen the mirror past the textarea.
   s.boxSizing = 'border-box';
-  s.width = ta.clientWidth + 'px';
+
+  // Width must be FRACTIONALLY accurate, not rounded. clientWidth is an integer,
+  // so using it leaves the mirror a fraction of a pixel narrower or wider than
+  // the textarea — which changes where a handful of lines wrap, and the error
+  // accumulates down the document. Measured on a 52 kB script: about one line of
+  // drift by the end. Enough to put a find highlight or a comment mark on the
+  // wrong line, and enough to pull the two scroll-synced panes apart.
+  //
+  // getBoundingClientRect().width is the unrounded border-box width. The
+  // scrollbar has to come off it, because the textarea lays its text out inside
+  // clientWidth, which already excludes the scrollbar.
+  const borderX = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+  const scrollbar = Math.max(0, ta.offsetWidth - ta.clientWidth - borderX);
+  s.width = Math.max(0, ta.getBoundingClientRect().width - scrollbar) + 'px';
   return div;
 }
 
