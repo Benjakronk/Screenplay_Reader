@@ -509,6 +509,15 @@ FADE OUT.
   // probe with the real fetch directly (not the wrapped one) to avoid recursion.
   async function detect() {
     if (serverPresent !== null) return serverPresent;
+
+    // In a same-origin cloud deployment the API *is* this origin, so there is no
+    // separate local server to discover - probing would only ever return 401 and
+    // log a confusing error in the console.
+    if (window.Cloud && window.Cloud.sameOrigin && window.Cloud.sameOrigin()) {
+      serverPresent = false;
+      return false;
+    }
+
     try {
       const res = await realFetch('/api/tree', { method: 'GET' });
       serverPresent = res.ok;

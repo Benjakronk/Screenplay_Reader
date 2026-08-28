@@ -87,6 +87,10 @@ async function main() {
   const outsiderTok = (await auth.createSession(outsiderId)).token;
 
   await collab.listen();
+  // The provider treats this as the socket ENDPOINT and sends the document name
+  // in the protocol, not the path. Behind nginx the browser therefore connects
+  // to exactly /collab with no document id and no trailing slash - which is why
+  // the nginx location must be `/collab`, not `/collab/`.
   const URL = `ws://127.0.0.1:${PORT}`;
 
   // Connects a provider and resolves how it went, rather than hanging on a

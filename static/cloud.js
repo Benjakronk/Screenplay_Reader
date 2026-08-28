@@ -61,6 +61,13 @@ window.Cloud = (function () {
   // Computed from the config, not from `base`, so it answers correctly before
   // probe() has run.
   function enabled() { return !!configuredBase(); }
+
+  // True when the API is served from this very origin (the frontend and the
+  // backend share a host). backend.js uses this to skip a probe that would only
+  // ever return 401 and clutter the console.
+  function sameOrigin() {
+    try { return configuredBase() === location.origin; } catch { return false; }
+  }
   function active()  { return signedIn; }
 
   // wss://<host>/collab — derived from the API origin so there is one setting.
@@ -596,7 +603,7 @@ window.Cloud = (function () {
   }
 
   return {
-    enabled, active, probe, login, logout, acceptInvite, authHeaders, api,
+    enabled, sameOrigin, active, probe, login, logout, acceptInvite, authHeaders, api,
     adaptUi, wrapApp, openSignInDialog, openShareDialog, openAccountDialog,
     joinDocument, leaveDocument,
     importBackup,
