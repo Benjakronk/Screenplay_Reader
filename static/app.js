@@ -3812,6 +3812,13 @@ function onEditorContextMenu(ev) {
   const lineKind = classifyLine(line.text);
 
   const items = [
+    // Commenting exists only inside a collaboration session, so the entry is
+    // absent rather than disabled when there is nothing to anchor into.
+    ...(window.Comments && window.Collab && window.Collab.active()
+      ? [{ label: 'Comment on selection',
+           action: () => window.Comments.commentOnSelection(),
+           disabled: sel.start === sel.end }, '-']
+      : []),
     { label: 'Convert line to…', disabled: true },
     { label: '  Scene heading',  action: () => CMDS['elem-scene'](),      hint: 'Ctrl+1' },
     { label: '  Action',         action: () => CMDS['elem-action'](),     hint: 'Ctrl+2' },

@@ -194,9 +194,11 @@ window.Cloud = (function () {
     }
     renderPeers();
     markReadOnly(info.role === 'viewer');
+    if (window.Comments) window.Comments.attach();
   }
 
   function leaveDocument() {
+    if (window.Comments) window.Comments.detach();
     if (window.Collab) window.Collab.detach();
     peers = [];
     renderPeers();

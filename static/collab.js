@@ -84,6 +84,7 @@ window.Collab = (function () {
     }, LOCAL_ORIGIN);
     lastText = now;
     publishCursor();
+    fireDocChange();
   }
 
   // ---------- remote -> local ----------
@@ -187,8 +188,8 @@ window.Collab = (function () {
     });
 
     ytext.observe((event, tr) => {
-      if (tr.origin === LOCAL_ORIGIN) return;   // our own edit coming back
-      applyRemote();
+      if (tr.origin !== LOCAL_ORIGIN) applyRemote();   // our own edit comes back
+      fireDocChange();
     });
 
     // First sync: adopt the server's copy wholesale.
@@ -230,8 +231,24 @@ window.Collab = (function () {
     lastText = ta ? ta.value : lastText;
   }
 
+  // Fired after any change to the shared text, local or remote, so anything
+  // anchored into it (comments, suggestions) can re-resolve its positions.
+  const changeHooks = new Set();
+  function onDocChange(fn) { changeHooks.add(fn); return () => changeHooks.delete(fn); }
+  function fireDocChange() {
+    for (const fn of changeHooks) {
+      try { fn(); } catch { /* one bad listener must not stop the others */ }
+    }
+  }
+
   return {
     attach, detach, active, syncFromTextarea, undo, redo, peers, colorFor,
+    // The CRDT itself, for features that anchor into the same document.
+    // Null when not collaborating - callers must check.
+    onDocChange,
+    get Y() { return Y; },
+    get ydoc() { return ydoc; },
+    get ytext() { return ytext; },
     // Exposed for collab/test-binding.mjs, which fuzzes the diff against real
     // Yjs documents. Not part of the API the app uses.
     _diffRange: diffRange,

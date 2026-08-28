@@ -1025,3 +1025,69 @@ body.cloud-mode .editor[readonly] { background: var(--sidebar); cursor: default;
 /* Toolbar icon buttons that carry an on/off state (scroll sync, fullscreen).
    .mode-switch already has its own rule; this covers the standalone ones. */
 .icon-btn.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+
+/* ---------- comments ----------
+   The editor overlay follows .find-hl-box: absolutely positioned boxes inside
+   .pane-edit, one per wrapped visual line, repositioned on scroll. A textarea
+   cannot style its own glyphs, so the mark sits behind the text. */
+
+#comment-hl { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.comment-hl-box {
+  position: absolute;
+  background: rgba(255, 196, 0, 0.28);
+  border-bottom: 2px solid rgba(212, 150, 0, 0.75);
+  border-radius: 2px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.comment-hl-box:hover { background: rgba(255, 196, 0, 0.45); }
+body.theme-dark .comment-hl-box,
+body.theme-night .comment-hl-box { background: rgba(255, 210, 80, 0.22); }
+
+#comments-panel.hidden { display: none; }
+#comments-list { padding: 0 0.4rem 0.6rem; }
+.comment-empty { color: var(--muted); font-size: 0.78rem; padding: 0 0.3rem; }
+.comment-subhead {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin: 0.7rem 0 0.3rem; padding: 0 0.3rem;
+}
+.comment-thread {
+  border: 1px solid var(--rule); border-radius: 6px;
+  padding: 0.45rem 0.55rem; margin-bottom: 0.45rem;
+  background: var(--paper);
+}
+.comment-thread.flash { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+.comment-thread.resolved { opacity: 0.6; }
+.comment-thread.orphaned { border-style: dashed; }
+
+.comment-quote {
+  font: 0.78rem var(--courier);
+  color: var(--ink);
+  background: var(--accent-bg);
+  border-radius: 3px; padding: 0.2rem 0.35rem; margin-bottom: 0.35rem;
+  cursor: pointer;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* An orphaned comment keeps the words it was attached to, struck through, so
+   the thread still makes sense after the text has gone. */
+.comment-quote.gone { text-decoration: line-through; opacity: 0.7; cursor: default; }
+.comment-note { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.35rem; }
+
+.comment-msg { font-size: 0.8rem; margin-bottom: 0.25rem; }
+.comment-who { font-weight: 600; margin-right: 0.3rem; }
+.comment-text { color: var(--ink); }
+
+.comment-actions { display: flex; gap: 0.25rem; align-items: center; margin-top: 0.35rem; }
+.comment-reply {
+  flex: 1; min-width: 0;
+  border: 1px solid var(--rule); border-radius: 4px;
+  padding: 0.2rem 0.35rem; font: 0.78rem var(--sans);
+  background: var(--paper); color: var(--ink);
+}
+.comment-actions button {
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--sidebar);
+  color: inherit; font-size: 0.72rem; padding: 0.15rem 0.4rem; cursor: pointer;
+}
+.comment-actions button:hover:not(:disabled) { border-color: var(--accent); }
+.comment-actions button:disabled { opacity: 0.5; cursor: default; }

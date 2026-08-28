@@ -1,0 +1,395 @@
+// Comments anchored to ranges of the script.
+//
+// Loaded as a classic script after collab.js. Exposes window.Comments. Inert
+// unless a collaboration session is active — comments live inside the same
+// Y.Doc as the text, so they only exist in cloud mode.
+//
+// WHY THE SAME Y.DOC. Storing them there means sync, offline, conflict
+// resolution, persistence and backups all come for free: doc_state.ydoc already
+// carries them, so there is no server change and no second sync path. It also
+// means a comment and the edit it refers to arrive together, never out of order.
+//
+// ANCHORING. A comment records Y.RelativePositions, not character offsets. A
+// relative position stays on its words when someone inserts text above it —
+// which is the entire reason this is worth doing on the CRDT rather than on
+// plain indices. Verified: an anchor survives insertion above, below and
+// immediately before itself.
+//
+// ORPHANS. When the anchored text is deleted, Yjs does not invalidate the
+// positions; it collapses them toward a surviving neighbour, so `to - from`
+// becomes 0. That is the orphan signal. Such a comment is kept, shown with the
+// text it was originally attached to, and only a person may dismiss it — the
+// deletion is often exactly what the comment was about, and a thread must not
+// evaporate mid-conversation.
+
+window.Comments = (function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+
+  function notify(msg, isError) {
+    try { if (typeof status === 'function') status(msg, isError); } catch { /* no-op */ }
+  }
+
+  // ---------- reaching the CRDT ----------
+
+  const C = () => window.Collab;
+  const live = () => !!(C() && C().active() && C().ydoc && C().ytext);
+  const readOnly = () => !!(C() && C().readOnly);
+  const arr = () => (live() ? C().ydoc.getArray('comments') : null);
+
+  // ---------- model ----------
+
+  function encodePos(index) {
+    const Y = C().Y, t = C().ytext;
+    return Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(t, index));
+  }
+  function decodePos(bytes) {
+    const Y = C().Y;
+    const abs = Y.createAbsolutePositionFromRelativePosition(
+      Y.decodeRelativePosition(bytes), C().ydoc);
+    return abs ? abs.index : null;
+  }
+
+  // A comment's live range, re-resolved from its relative positions every time.
+  function rangeOf(m) {
+    const from = decodePos(m.get('from'));
+    const to = decodePos(m.get('to'));
+    if (from == null || to == null) return { from: 0, to: 0, orphaned: true };
+    return { from, to, orphaned: to - from === 0 };
+  }
+
+  // Plain-object view of every comment, for rendering.
+  function list() {
+    const a = arr();
+    if (!a) return [];
+    return a.toArray().map((m) => {
+      const r = rangeOf(m);
+      return {
+        id: m.get('id'),
+        from: r.from, to: r.to, orphaned: r.orphaned,
+        quote: m.get('quote') || '',
+        authorId: m.get('authorId') || '',
+        authorName: m.get('authorName') || 'Someone',
+        createdAt: m.get('createdAt') || 0,
+        resolved: !!m.get('resolved'),
+        replies: (m.get('replies') ? m.get('replies').toArray() : []).map((r2) => ({
+          authorName: r2.get('authorName') || 'Someone',
+          text: r2.get('text') || '',
+          at: r2.get('at') || 0,
+        })),
+      };
+    }).sort((x, y) => x.from - y.from || x.createdAt - y.createdAt);
+  }
+
+  function findMap(id) {
+    const a = arr();
+    if (!a) return null;
+    return a.toArray().find((m) => m.get('id') === id) || null;
+  }
+
+  function add(from, to, text) {
+    if (!live() || readOnly()) return null;
+    const Y = C().Y, doc = C().ydoc, t = C().ytext;
+    const me = window.Cloud && window.Cloud.user;
+    const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const who = (me && (me.name || me.email)) || 'Someone';
+    const m = new Y.Map();
+    doc.transact(() => {
+      // ORDER MATTERS. A nested Y type can only be populated once its parent is
+      // attached to the document - Yjs throws "Add Yjs type to a document before
+      // reading data" otherwise. So the map goes into the array first, and the
+      // replies list is filled afterwards.
+      arr().push([m]);
+      m.set('id', id);
+      m.set('from', encodePos(from));
+      m.set('to', encodePos(to));
+      m.set('quote', t.toString().slice(from, to));
+      m.set('authorId', (me && me.id) || '');
+      m.set('authorName', who);
+      m.set('createdAt', Date.now());
+      m.set('resolved', false);
+      m.set('replies', new Y.Array());
+
+      const r = new Y.Map();
+      m.get('replies').push([r]);
+      r.set('authorName', who);
+      r.set('text', text);
+      r.set('at', Date.now());
+    });
+    return id;
+  }
+
+  function reply(id, text) {
+    if (!live() || readOnly()) return;
+    const m = findMap(id);
+    if (!m) return;
+    const Y = C().Y, doc = C().ydoc;
+    const me = window.Cloud && window.Cloud.user;
+    doc.transact(() => {
+      const r = new Y.Map();
+      m.get('replies').push([r]);   // attach before populating, as above
+      r.set('authorName', (me && (me.name || me.email)) || 'Someone');
+      r.set('text', text);
+      r.set('at', Date.now());
+    });
+  }
+
+  function setResolved(id, v) {
+    if (!live() || readOnly()) return;
+    const m = findMap(id);
+    if (m) C().ydoc.transact(() => m.set('resolved', !!v));
+  }
+
+  function remove(id) {
+    if (!live() || readOnly()) return;
+    const a = arr();
+    const i = a.toArray().findIndex((m) => m.get('id') === id);
+    if (i >= 0) C().ydoc.transact(() => a.delete(i, 1));
+  }
+
+  // ---------- editor overlay ----------
+  //
+  // Mirrors the find-highlight pattern in app.js: one absolutely-positioned host
+  // inside .pane-edit, a box per wrapped visual line, repositioned on scroll.
+
+  function overlayHost() {
+    const pane = document.querySelector('.pane-edit');
+    if (!pane) return null;
+    let host = $('comment-hl');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'comment-hl';
+      host.setAttribute('aria-hidden', 'true');
+      pane.appendChild(host);
+    }
+    return host;
+  }
+
+  function redrawOverlay() {
+    const host = overlayHost();
+    const ta = $('editor');
+    if (!host || !ta) return;
+    host.innerHTML = '';
+    if (!live()) return;
+
+    for (const c of list()) {
+      if (c.orphaned || c.resolved) continue;      // nothing to point at
+      if (typeof textareaRangeRects !== 'function') return;
+      for (const r of textareaRangeRects(ta, c.from, c.to)) {
+        const box = document.createElement('div');
+        box.className = 'comment-hl-box';
+        box.dataset.id = c.id;
+        box.title = `${c.authorName}: ${c.replies[0] ? c.replies[0].text : ''}`;
+        box.style.top = (r.top - ta.scrollTop) + 'px';
+        box.style.left = (r.left - ta.scrollLeft) + 'px';
+        box.style.width = r.width + 'px';
+        box.style.height = r.height + 'px';
+        box.onclick = () => focusComment(c.id);
+        host.appendChild(box);
+      }
+    }
+  }
+
+  // ---------- sidebar panel ----------
+
+  function panelHost() {
+    const sidebar = $('sidebar');
+    if (!sidebar) return null;
+    let panel = $('comments-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'comments-panel';
+      panel.className = 'outline-panel';
+      panel.innerHTML = '<div class="section-head">Comments</div><div id="comments-list"></div>';
+      sidebar.appendChild(panel);
+    }
+    return panel;
+  }
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function renderPanel() {
+    const panel = panelHost();
+    if (!panel) return;
+    panel.classList.toggle('hidden', !live());
+    if (!live()) return;
+
+    const items = list();
+    const open = items.filter((c) => !c.resolved && !c.orphaned);
+    const orphan = items.filter((c) => !c.resolved && c.orphaned);
+    const done = items.filter((c) => c.resolved);
+
+    const host = $('comments-list');
+    host.innerHTML = '';
+
+    if (!items.length) {
+      host.innerHTML = '<p class="comment-empty">Select text in the editor and choose ' +
+                       '“Comment on selection” to start a thread.</p>';
+      return;
+    }
+
+    const section = (label, group, cls) => {
+      if (!group.length) return;
+      if (label) {
+        const h = document.createElement('div');
+        h.className = 'comment-subhead';
+        h.textContent = `${label} (${group.length})`;
+        host.appendChild(h);
+      }
+      for (const c of group) host.appendChild(threadEl(c, cls));
+    };
+
+    section('', open, '');
+    section('Orphaned', orphan, 'orphaned');
+    section('Resolved', done, 'resolved');
+  }
+
+  function threadEl(c, cls) {
+    const el = document.createElement('div');
+    el.className = 'comment-thread' + (cls ? ' ' + cls : '');
+    el.dataset.id = c.id;
+
+    const quote = c.orphaned
+      ? `<div class="comment-quote gone">${esc(c.quote)}</div>
+         <div class="comment-note">The text this was attached to has been deleted.</div>`
+      : `<div class="comment-quote">${esc(c.quote)}</div>`;
+
+    el.innerHTML = quote +
+      c.replies.map((r) => `
+        <div class="comment-msg">
+          <span class="comment-who">${esc(r.authorName)}</span>
+          <span class="comment-text">${esc(r.text)}</span>
+        </div>`).join('') +
+      `<div class="comment-actions">
+         <input class="comment-reply" type="text" placeholder="Reply…" />
+         <button class="comment-resolve">${c.resolved ? 'Reopen' : 'Resolve'}</button>
+         <button class="comment-delete" title="Delete this thread">×</button>
+       </div>`;
+
+    if (!c.orphaned) el.querySelector('.comment-quote').onclick = () => focusComment(c.id);
+
+    const input = el.querySelector('.comment-reply');
+    input.onkeydown = (ev) => {
+      if (ev.key !== 'Enter' || !input.value.trim()) return;
+      reply(c.id, input.value.trim());
+      input.value = '';
+      redraw();
+    };
+    el.querySelector('.comment-resolve').onclick = () => { setResolved(c.id, !c.resolved); redraw(); };
+    el.querySelector('.comment-delete').onclick = () => {
+      if (confirm('Delete this comment thread?')) { remove(c.id); redraw(); }
+    };
+
+    if (readOnly()) {
+      for (const n of el.querySelectorAll('input,button')) n.disabled = true;
+    }
+    return el;
+  }
+
+  // Scroll both panes to a comment and flash it.
+  function focusComment(id) {
+    const c = list().find((x) => x.id === id);
+    const ta = $('editor');
+    if (!c || !ta || c.orphaned) return;
+    if (typeof textareaCaretCoords === 'function') {
+      const top = textareaCaretCoords(ta, c.from).top;
+      ta.scrollTop = Math.max(0, top - ta.clientHeight / 3);
+    }
+    ta.setSelectionRange(c.from, c.to);
+    const el = document.querySelector(`.comment-thread[data-id="${id}"]`);
+    if (el) {
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 900);
+      el.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // ---------- composing ----------
+
+  function commentOnSelection() {
+    if (!live()) { notify('Comments need a cloud session'); return; }
+    if (readOnly()) { notify('You have view-only access'); return; }
+    const ta = $('editor');
+    const from = ta.selectionStart, to = ta.selectionEnd;
+    if (from === to) { notify('Select some text to comment on'); return; }
+
+    const root = $('modal-root');
+    root.classList.remove('hidden');
+    root.innerHTML = `
+      <div class="modal">
+        <div class="modal-head"><h3>Add a comment</h3>
+          <button class="icon-btn" id="modal-close">×</button></div>
+        <div class="modal-body">
+          <div class="comment-quote">${esc(ta.value.slice(from, to))}</div>
+          <label class="cloud-field">Comment
+            <textarea id="comment-input" rows="3"></textarea></label>
+          <div class="modal-actions">
+            <button id="comment-cancel" class="ghost">Cancel</button>
+            <button id="comment-save" class="primary">Comment</button>
+          </div>
+        </div>
+      </div>`;
+    const close = () => root.classList.add('hidden');
+    $('modal-close').onclick = close;
+    $('comment-cancel').onclick = close;
+    $('comment-save').onclick = () => {
+      const text = $('comment-input').value.trim();
+      if (!text) return;
+      add(from, to, text);
+      close();
+      redraw();
+    };
+    setTimeout(() => $('comment-input').focus(), 0);
+  }
+
+  // ---------- lifecycle ----------
+
+  let unsubscribe = null;
+  let observed = null;          // the Y.Array we attached observeDeep to
+  let redrawQueued = false;
+
+  function redraw() {
+    if (redrawQueued) return;
+    redrawQueued = true;
+    requestAnimationFrame(() => {
+      redrawQueued = false;
+      redrawOverlay();
+      renderPanel();
+    });
+  }
+
+  // Called when a document's collaboration session starts.
+  function attach() {
+    detach();
+    if (!live()) return;
+    unsubscribe = C().onDocChange(redraw);
+    observed = C().ydoc.getArray('comments');
+    observed.observeDeep(redraw);
+    const ta = $('editor');
+    if (ta && !ta.dataset.commentScroll) {
+      ta.dataset.commentScroll = '1';
+      ta.addEventListener('scroll', redrawOverlay);
+    }
+    redraw();
+  }
+
+  function detach() {
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    // Switching documents replaces the Y.Doc; drop the observer with it rather
+    // than leaving one bound to a doc that is about to be destroyed.
+    if (observed) { try { observed.unobserveDeep(redraw); } catch {} observed = null; }
+    const host = $('comment-hl');
+    if (host) host.innerHTML = '';
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  return {
+    attach, detach, redraw, commentOnSelection, focusComment,
+    list, add, reply, setResolved, remove,
+    // Exposed for tests in collab/test-comments.mjs.
+    _rangeOf: rangeOf,
+  };
+})();
