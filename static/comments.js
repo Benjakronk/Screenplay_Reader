@@ -210,7 +210,9 @@ window.Comments = (function () {
       const mr = div.getBoundingClientRect();
       for (const [r, sp] of spans) {
         out.set(r.key, Array.from(sp.getClientRects()).map((c) => ({
-          top: c.top - mr.top, left: c.left - mr.left, width: c.width, height: c.height,
+          // Same sub-pixel calibration app.js applies - see scaleMirrorTop.
+          top: scaleMirrorTop(ta, c.top - mr.top),
+          left: c.left - mr.left, width: c.width, height: c.height,
         })));
       }
       div.textContent = '';

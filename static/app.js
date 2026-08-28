@@ -1119,7 +1119,7 @@ function paneScrollTopOf(pane, el) {
 //   - the result is cached, because anchor positions only change when the text
 //     or the pane width changes - never when scrolling.
 let _anchorTops = null;
-function invalidateAnchorTops() { _anchorTops = null; }
+function invalidateAnchorTops() { _anchorTops = null; invalidateMirrorScale(); }
 
 function sourceAnchorTops(ta) {
   if (_anchorTops) return _anchorTops;
@@ -2748,6 +2748,55 @@ function configTaMirror(ta) {
   return div;
 }
 
+// The mirror can never wrap EXACTLY like the textarea. Everything that affects
+// wrapping is copied — font, size, spacing, white-space, word-break — and the
+// two still differ: measured on this app, the textarea lays out its text in
+// 437.000px and the mirror in 436.500px. The gap is sub-pixel and unavoidable,
+// because ta.clientWidth is already rounded and the browser lays out textarea
+// text using fractional values that are not exposed anywhere.
+//
+// Half a pixel per line compounds. Over a 52 kB script it reached a full line by
+// the halfway point, which put find highlights and comment marks on the line
+// above their text.
+//
+// So rather than chase the width, CALIBRATE: measure the mirror's total height
+// against the textarea's own scrollHeight and scale measured positions by the
+// ratio. The error accumulates linearly, so one factor corrects it — exactly at
+// both ends and proportionally in between. Cached, and invalidated alongside the
+// anchor positions whenever the text or the pane width changes.
+let _mirrorScale = null;
+function invalidateMirrorScale() { _mirrorScale = null; }
+
+function mirrorScale(ta) {
+  if (_mirrorScale != null) return _mirrorScale;
+  const cs = getComputedStyle(ta);
+  const padT = parseFloat(cs.paddingTop) || 0;
+  const padB = parseFloat(cs.paddingBottom) || 0;
+  const lh = parseFloat(cs.lineHeight) || 0;
+
+  const div = configTaMirror(ta);
+  div.textContent = ta.value;
+  const mirrorBox = div.getBoundingClientRect().height;
+  div.textContent = '';
+
+  // A textarea renders a trailing newline as an extra empty line; a pre-wrap div
+  // drops it. That is one line the mirror is always missing.
+  const trailing = /\n$/.test(ta.value) ? lh : 0;
+  const mirrorContent = mirrorBox - padT - padB + trailing;
+  const taContent = ta.scrollHeight - padT - padB;
+
+  _mirrorScale = (mirrorContent > 1 && taContent > 1) ? taContent / mirrorContent : 1;
+  return _mirrorScale;
+}
+
+// Corrects a mirror-measured y for that drift. Positions are relative to the
+// textarea's border box, so the padding is held fixed and only the distance
+// through the text is scaled.
+function scaleMirrorTop(ta, top) {
+  const padT = parseFloat(getComputedStyle(ta).paddingTop) || 0;
+  return padT + (top - padT) * mirrorScale(ta);
+}
+
 function textareaCaretCoords(ta, index) {
   const cs = getComputedStyle(ta);
   const div = configTaMirror(ta);
@@ -2756,7 +2805,7 @@ function textareaCaretCoords(ta, index) {
   // A non-empty span so it has a layout box even at end-of-text / end-of-line.
   span.textContent = ta.value.slice(index) || '.';
   div.appendChild(span);
-  const top = span.offsetTop;
+  const top = scaleMirrorTop(ta, span.offsetTop);
   const left = span.offsetLeft;
   const height = parseFloat(cs.lineHeight) || span.offsetHeight;
   div.textContent = '';
@@ -2777,7 +2826,8 @@ function textareaRangeRects(ta, start, end) {
   div.appendChild(document.createTextNode(ta.value.slice(end)));
   const mr = div.getBoundingClientRect();
   const rects = [...span.getClientRects()].map(r => ({
-    top: r.top - mr.top, left: r.left - mr.left, width: r.width, height: r.height,
+    top: scaleMirrorTop(ta, r.top - mr.top),
+    left: r.left - mr.left, width: r.width, height: r.height,
   }));
   div.textContent = '';
   return rects;
