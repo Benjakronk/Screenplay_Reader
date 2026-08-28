@@ -95,7 +95,7 @@ async function main() {
 
   // Connects a provider and resolves how it went, rather than hanging on a
   // rejection.
-  function connect(token, name = docId) {
+  function connect(token, name = docId, onClose = null) {
     const ydoc = new Y.Doc();
     return new Promise((resolve) => {
       let settled = false;
@@ -103,6 +103,7 @@ async function main() {
       const provider = new HocuspocusProvider({
         url: URL, name: String(name), document: ydoc, token,
         WebSocketPolyfill: globalThis.WebSocket,
+        onClose: () => { if (onClose) onClose(); },
         onSynced: () => done({ ok: true, provider, ydoc, text: ydoc.getText('content') }),
         onAuthenticationFailed: ({ reason }) => { provider.destroy(); done({ ok: false, reason }); },
       });
@@ -198,6 +199,42 @@ async function main() {
     await until(() => c.text.toString() === expected, 'the reloaded document');
     assert.ok(expected.includes('AKT I') && expected.includes('Hallo.'));
     c.provider.destroy();
+  });
+
+  // ------------------------------------------------- role changes (LAST)
+  //
+  // These force-close every connection to the document, so they run after the
+  // tests that depend on live sockets rather than before them.
+  section('role changes reach live connections');
+
+  await test('closeConnections drops an open socket', async () => {
+    let dropped = false;
+    const c = await connect(ownerTok, docId, () => { dropped = true; });
+    assert.ok(c.ok, 'could not connect: ' + c.reason);
+    collab.closeConnections(docId);
+    await until(() => dropped, 'the socket to be closed', 5000);
+    c.provider.destroy();
+  });
+
+  await test('a promoted viewer can write once reconnected', async () => {
+    // The viewer's socket authenticated as read-only. Promoting them in the
+    // database does not reach it - which is exactly why the API closes
+    // connections on a role change, rather than leaving writes to be dropped.
+    await db.query('UPDATE doc_access SET role=$1 WHERE doc_id=$2 AND user_id=$3',
+      ['editor', docId, viewerId]);
+    collab.closeConnections(docId);
+
+    const v = await connect(viewerTok);
+    assert.ok(v.ok, 'promoted user was refused: ' + v.reason);
+
+    const marker = 'WRITTEN-AFTER-PROMOTION';
+    v.ydoc.transact(() => v.text.insert(v.text.length, marker), 'local-editor');
+
+    const w = await connect(ownerTok);
+    await until(() => w.text.toString().includes(marker), 'the promoted write to propagate');
+
+    v.provider.destroy();
+    w.provider.destroy();
   });
 
   await collab.shutdown();

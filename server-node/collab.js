@@ -136,6 +136,21 @@ async function writeText(docId, text) {
   }
 }
 
+// Drop every live connection to a document, forcing each client to reconnect
+// and re-run onAuthenticate.
+//
+// WHY THIS IS NEEDED. onAuthenticate decides connectionConfig.readOnly ONCE, at
+// connection time. Changing someone's role in the database therefore does not
+// reach a socket that is already open: the client refetches /api/file, sees its
+// new role, lets the person type - and the server silently discards every write,
+// which the next remote update then overwrites. Silent data loss.
+//
+// Closing the connections is blunt (everyone on the document reconnects) but
+// correct, and the provider reconnects on its own within a second.
+function closeConnections(docId) {
+  try { server?.hocuspocus?.closeConnections(String(docId)); } catch { /* nothing open */ }
+}
+
 // How many people are in a document right now, for the presence UI. The
 // server-level getConnectionsCount() is a total across all documents, so go via
 // the Document, which has its own per-document count.
@@ -149,6 +164,6 @@ function connectionCount(docId) {
 
 module.exports = {
   createCollabServer, listen, shutdown,
-  readText, writeText, connectionCount,
+  readText, writeText, connectionCount, closeConnections,
   COLLAB_PORT,
 };

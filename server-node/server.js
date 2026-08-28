@@ -332,6 +332,9 @@ app.post('/api/share', auth.requireUser, async (req, res) => {
       `INSERT INTO doc_access (doc_id, user_id, role, created_at) VALUES ($1,$2,$3,$4)
        ON CONFLICT (doc_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
       [doc.id, rows[0].id, role, Date.now()]);
+    // A live socket carries the role it authenticated with, so it must be
+    // reconnected or the change does not take effect until a reload.
+    collab.closeConnections(doc.id);
     res.json({ ok: true });
   } catch (err) { fail(res, err, 500); }
 });
@@ -362,6 +365,7 @@ app.post('/api/unshare', auth.requireUser, async (req, res) => {
          AND user_id = (SELECT id FROM users WHERE email=$2)
          AND user_id <> $3`,
       [doc.id, email, doc.ownerId]);
+    collab.closeConnections(doc.id);   // as above: evict the stale socket
     res.json({ ok: true });
   } catch (err) { fail(res, err, 500); }
 });
