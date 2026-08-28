@@ -1070,63 +1070,77 @@ function listSourceAnchors(src) {
   return out;
 }
 
-function approxTextareaLineHeight(ta) {
-  const cs = getComputedStyle(ta);
-  const lh = parseFloat(cs.lineHeight);
-  if (Number.isFinite(lh)) return lh;
-  return parseFloat(cs.fontSize) * 1.55;
+// ---------- scroll sync ----------
+//
+// Both panes are keyed to the same anchors (scene and section headings) and the
+// position between them is INTERPOLATED, not copied as a pixel offset. A scene
+// that is 300px of source may be 800px rendered, so carrying the raw offset
+// across drifts through the scene and then jumps at the next heading. Working in
+// fractions keeps the two in step the whole way down.
+//
+// Source positions are measured with textareaCaretCoords, which lays the text
+// out in a mirror div. Estimating them as lineIndex * lineHeight assumes every
+// line occupies one visual row, which soft wrapping breaks - and the error
+// accumulates, so the panes diverge further apart the deeper you scroll.
+
+function paneScrollTopOf(pane, el) {
+  return el.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
 }
-function textareaTopForLine(ta, lineIdx) {
-  return (parseFloat(getComputedStyle(ta).paddingTop) || 0) +
-         lineIdx * approxTextareaLineHeight(ta);
+
+// Where each anchor sits, in the scrollable coordinates of its own pane.
+function sourceAnchorTops(ta) {
+  return listSourceAnchors(ta.value).map(a => textareaCaretCoords(ta, a.charIdx).top);
+}
+function viewAnchorEls(pane) {
+  return Array.from(pane.querySelectorAll('.elem-scene, .elem-section'));
+}
+
+// Which anchor span the pane is in, and how far through it (0..1). index -1
+// means "above the first anchor", where the span is the run-up to it.
+function positionWithin(tops, y, contentEnd) {
+  if (!tops.length) return null;
+  let i = -1;
+  for (let k = 0; k < tops.length; k++) {
+    if (tops[k] <= y) i = k; else break;
+  }
+  const from = i < 0 ? 0 : tops[i];
+  const to   = (i + 1 < tops.length) ? tops[i + 1] : Math.max(contentEnd, from + 1);
+  const span = Math.max(1, to - from);
+  return { index: i, frac: Math.min(1, Math.max(0, (y - from) / span)) };
+}
+
+// Turn that back into a scroll position in the other pane.
+function scrollFromPosition(tops, pos, contentEnd) {
+  if (!tops.length || !pos) return null;
+  const i = Math.min(pos.index, tops.length - 1);
+  const from = i < 0 ? 0 : tops[i];
+  const to   = (i + 1 < tops.length) ? tops[i + 1] : Math.max(contentEnd, from + 1);
+  return from + pos.frac * Math.max(1, to - from);
 }
 
 function captureAnchorFromSource() {
   const ta = $('editor');
-  const anchors = listSourceAnchors(ta.value);
-  if (anchors.length === 0) return null;
-  let lastIdx = -1, lastTop = 0;
-  for (let i = 0; i < anchors.length; i++) {
-    const top = textareaTopForLine(ta, anchors[i].lineIdx);
-    if (top <= ta.scrollTop) { lastIdx = i; lastTop = top; }
-    else break;
-  }
-  if (lastIdx < 0) return null;
-  return { index: lastIdx, offsetFromPaneTop: lastTop - ta.scrollTop };
+  const tops = sourceAnchorTops(ta);
+  return positionWithin(tops, ta.scrollTop, ta.scrollHeight - ta.clientHeight);
 }
 function captureAnchorFromView() {
   const pane = document.querySelector('.pane-view');
   if (!pane) return null;
-  const anchors = pane.querySelectorAll('.elem-scene, .elem-section');
-  if (anchors.length === 0) return null;
-  const paneTop = pane.getBoundingClientRect().top;
-  let lastIdx = -1, lastOff = 0;
-  for (let i = 0; i < anchors.length; i++) {
-    const t = anchors[i].getBoundingClientRect().top;
-    if (t - paneTop <= 0) { lastIdx = i; lastOff = t - paneTop; }
-    else break;
-  }
-  if (lastIdx < 0) return null;
-  return { index: lastIdx, offsetFromPaneTop: lastOff };
+  const tops = viewAnchorEls(pane).map(el => paneScrollTopOf(pane, el));
+  return positionWithin(tops, pane.scrollTop, pane.scrollHeight - pane.clientHeight);
 }
-function applyAnchorToSource(anchor) {
+function applyAnchorToSource(pos) {
   const ta = $('editor');
-  const anchors = listSourceAnchors(ta.value);
-  const a = anchors[anchor.index];
-  if (!a) return;
-  const top = textareaTopForLine(ta, a.lineIdx);
-  ta.scrollTop = Math.max(0, top - (anchor.offsetFromPaneTop || 0));
+  const tops = sourceAnchorTops(ta);
+  const y = scrollFromPosition(tops, pos, ta.scrollHeight - ta.clientHeight);
+  if (y != null) ta.scrollTop = Math.max(0, y);
 }
-function applyAnchorToView(anchor) {
+function applyAnchorToView(pos) {
   const pane = document.querySelector('.pane-view');
   if (!pane) return;
-  const anchors = pane.querySelectorAll('.elem-scene, .elem-section');
-  const el = anchors[anchor.index];
-  if (!el) return;
-  const paneTop = pane.getBoundingClientRect().top;
-  const elTop = el.getBoundingClientRect().top;
-  const delta = (elTop - paneTop) - (anchor.offsetFromPaneTop || 0);
-  pane.scrollTop = Math.max(0, pane.scrollTop + delta);
+  const tops = viewAnchorEls(pane).map(el => paneScrollTopOf(pane, el));
+  const y = scrollFromPosition(tops, pos, pane.scrollHeight - pane.clientHeight);
+  if (y != null) pane.scrollTop = Math.max(0, y);
 }
 
 function syncScroll(fromEl, toEl) {
