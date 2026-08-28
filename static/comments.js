@@ -229,6 +229,7 @@ window.Comments = (function () {
     const shown = list().filter((c) => !c.orphaned && !c.resolved);
     if (!shown.length) return;
     const rects = batchRangeRects(ta, shown.map((c) => ({ key: c.id, from: c.from, to: c.to })));
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 0;
 
     for (const c of shown) {
       for (const r of (rects.get(c.id) || [])) {
@@ -237,10 +238,15 @@ window.Comments = (function () {
         box.dataset.id = c.id;
         box.title = `${c.authorName}: ${c.replies[0] ? c.replies[0].text : ''}`;
         // Content coordinates - the scroll offset lives on the host.
-        box.style.top = r.top + 'px';
+        //
+        // getClientRects returns the GLYPH box, which sits inside the taller
+        // line box by half the leading, so a mark drawn on it alone reads as
+        // sitting above the text. Cover the line box instead.
+        const lead = lh > r.height ? (lh - r.height) / 2 : 0;
+        box.style.top = (r.top - lead) + 'px';
         box.style.left = r.left + 'px';
         box.style.width = r.width + 'px';
-        box.style.height = r.height + 'px';
+        box.style.height = (lh || r.height) + 'px';
         box.onclick = () => focusComment(c.id);
         host.appendChild(box);
       }

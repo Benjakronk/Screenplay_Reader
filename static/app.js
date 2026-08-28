@@ -832,6 +832,7 @@ function setMode(mode) {
 
   state.mode = mode;
   setStoredMode(mode);
+  invalidateAnchorTops();   // the pane width changed, so the wrapping did too
   const c = $('content');
   c.classList.remove('mode-view', 'mode-source', 'mode-split');
   c.classList.add('mode-' + mode);
@@ -879,6 +880,7 @@ function onEditorInput() {
 }
 let renderTimer = null;
 function scheduleRender() {
+  invalidateAnchorTops();      // the text moved; measured anchor tops are stale
   if (renderTimer) clearTimeout(renderTimer);
   renderTimer = setTimeout(() => {
     render($('editor').value);
@@ -1105,8 +1107,47 @@ function paneScrollTopOf(pane, el) {
 }
 
 // Where each anchor sits, in the scrollable coordinates of its own pane.
+//
+// PERFORMANCE. This runs on every scroll event, and measuring anchors one at a
+// time with textareaCaretCoords lays out the WHOLE document in the mirror once
+// per anchor - 26 full layouts per scroll on a feature-length script, which made
+// scrolling visibly lag. Two changes fix it:
+//
+//   - all anchors are measured in a SINGLE mirror pass, by partitioning the text
+//     into spans that each begin at an anchor. Nothing is inserted into the
+//     text, so wrapping is unaffected;
+//   - the result is cached, because anchor positions only change when the text
+//     or the pane width changes - never when scrolling.
+let _anchorTops = null;
+function invalidateAnchorTops() { _anchorTops = null; }
+
 function sourceAnchorTops(ta) {
-  return listSourceAnchors(ta.value).map(a => textareaCaretCoords(ta, a.charIdx).top);
+  if (_anchorTops) return _anchorTops;
+  const anchors = listSourceAnchors(ta.value);
+  if (!anchors.length) return (_anchorTops = []);
+
+  const div = configTaMirror(ta);
+  div.textContent = '';
+  if (anchors[0].charIdx > 0) {
+    div.appendChild(document.createTextNode(ta.value.slice(0, anchors[0].charIdx)));
+  }
+  const spans = [];
+  for (let i = 0; i < anchors.length; i++) {
+    const end = (i + 1 < anchors.length) ? anchors[i + 1].charIdx : ta.value.length;
+    const sp = document.createElement('span');
+    // The span CONTAINS the text from this anchor to the next, so the document
+    // is only partitioned, never altered.
+    sp.textContent = ta.value.slice(anchors[i].charIdx, end) || '.';
+    div.appendChild(sp);
+    spans.push(sp);
+  }
+  const mr = div.getBoundingClientRect();
+  const tops = spans.map((sp) => {
+    const r = sp.getClientRects();
+    return (r.length ? r[0].top : sp.getBoundingClientRect().top) - mr.top;
+  });
+  div.textContent = '';
+  return (_anchorTops = tops);
 }
 function viewAnchorEls(pane) {
   return Array.from(pane.querySelectorAll('.elem-scene, .elem-section'));
@@ -2186,15 +2227,24 @@ function drawFindHighlightSource(m) {
     pane.appendChild(host);
   }
   host.innerHTML = '';
+  // Boxes are placed in CONTENT coordinates and the host carries the scroll
+  // offset, so repositioning on scroll costs one style write rather than
+  // re-measuring the whole document in the mirror.
+  const lh = parseFloat(getComputedStyle(ta).lineHeight) || 0;
   for (const r of textareaRangeRects(ta, m.start, m.end)) {
     const box = document.createElement('div');
     box.className = 'find-hl-box';
-    box.style.top = (r.top - ta.scrollTop) + 'px';
-    box.style.left = (r.left - ta.scrollLeft) + 'px';
+    // getClientRects returns the GLYPH box, which sits inside the taller line
+    // box by half the leading. Highlighting only the glyph box reads as sitting
+    // above the text, so cover the line box instead.
+    const lead = lh > r.height ? (lh - r.height) / 2 : 0;
+    box.style.top = (r.top - lead) + 'px';
+    box.style.left = r.left + 'px';
     box.style.width = r.width + 'px';
-    box.style.height = r.height + 'px';
+    box.style.height = (lh || r.height) + 'px';
     host.appendChild(box);
   }
+  positionFindHighlight();
   host.classList.remove('hidden');
 }
 
@@ -2206,10 +2256,15 @@ function clearFindHighlight() {
 
 // Reposition the source highlight after the textarea scrolls (its boxes are
 // positioned relative to the scroll offset).
+// Cheap: moves the host, measures nothing. Safe to call on every scroll event.
+function positionFindHighlight() {
+  const host = $('find-hl'), ta = $('editor');
+  if (!host || !ta) return;
+  host.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+}
 function repositionFindHighlight() {
   if (!findState.open) return;
-  const m = findState.matches[findState.current];
-  if (m && (state.mode === 'source' || state.mode === 'split')) drawFindHighlightSource(m);
+  positionFindHighlight();
 }
 
 function findNext() {
@@ -4416,6 +4471,12 @@ function wire() {
     // abs-positioned child of pane-view, which scrolls with the content.
     // Nothing to do here since scrolling moves the caret along naturally.
   });
+  // A resize changes the pane width, so every measured position is stale.
+  window.addEventListener('resize', () => {
+    invalidateAnchorTops();
+    if (window.Comments) window.Comments.redraw();
+  });
+
   ta.addEventListener('scroll', () => {
     if (state.mode === 'split') syncScroll(ta, viewWrap);
     repositionFindHighlight();
