@@ -813,7 +813,7 @@ function status(msg, isError) {
 // Modes: 'view'  = paginated, WYSIWYG editable (default — industry-standard)
 //        'split' = page view + raw source textarea side-by-side
 function setMode(mode) {
-  if (mode !== 'view' && mode !== 'split') mode = 'view';
+  if (mode !== 'view' && mode !== 'split' && mode !== 'source') mode = 'view';
   const sameMode = mode === state.mode;
 
   // Capture the topmost visible element so we can restore scroll after the
@@ -835,8 +835,12 @@ function setMode(mode) {
   const c = $('content');
   c.classList.remove('mode-view', 'mode-source', 'mode-split');
   c.classList.add('mode-' + mode);
+  // The two buttons are independent pane toggles, so both are lit in split.
   for (const btn of document.querySelectorAll('.mode-switch button')) {
-    btn.classList.toggle('active', btn.dataset.mode === mode);
+    const pane = btn.dataset.pane;
+    btn.classList.toggle('active',
+      pane === 'view' ? (mode === 'view' || mode === 'split')
+                      : (mode === 'source' || mode === 'split'));
   }
   $('format-toolbar').classList.toggle('hidden', false);
 
@@ -849,7 +853,20 @@ function setMode(mode) {
   }
 
   if (anchor) requestAnimationFrame(() => anchor.scrollIntoView({ block: 'start' }));
-  if (!sameMode && mode === 'split') setTimeout(() => $('editor').focus(), 0);
+  if (!sameMode && (mode === 'split' || mode === 'source')) setTimeout(() => $('editor').focus(), 0);
+}
+
+// Show or hide one pane, independently of the other. The two are never both
+// hidden: turning off the only visible pane swaps to the other instead, which
+// is what makes a single button read as "show just this one".
+function togglePane(which) {
+  let showView   = state.mode === 'view'   || state.mode === 'split';
+  let showSource = state.mode === 'source' || state.mode === 'split';
+  if (which === 'view') showView = !showView; else showSource = !showSource;
+  if (!showView && !showSource) {
+    if (which === 'view') showSource = true; else showView = true;
+  }
+  setMode(showView && showSource ? 'split' : (showView ? 'view' : 'source'));
 }
 
 // ---------- editor ----------
@@ -1146,6 +1163,7 @@ function applyAnchorToView(pos) {
 function syncScroll(fromEl, toEl) {
   if (state.scrollSyncing) return;
   if (!getSplitSync()) return;
+  if (state.mode !== 'split') return;   // nothing to sync to
   state.scrollSyncing = true;
   try {
     const anchor = fromEl.tagName === 'TEXTAREA'
@@ -2837,6 +2855,8 @@ const PALETTE_COMMANDS = [
 
   { label: 'Read view',              action: 'mode-view',     group: 'View',    hint: 'Ctrl+E' },
   { label: 'Edit (source + preview)', action: 'mode-split',   group: 'View',    hint: 'Ctrl+E' },
+  { label: 'Source only',            action: 'mode-source',   group: 'View' },
+  { label: 'Fullscreen',             action: 'fullscreen',    group: 'View' },
   { label: 'Toggle scroll sync',     action: () => toggleSplitSync(), group: 'View' },
   { label: 'Align panes now',        action: () => syncNow(),         group: 'View' },
   { label: 'Performance mode',       action: 'perform',       group: 'View',    hint: 'Ctrl+Shift+P' },
@@ -3329,6 +3349,8 @@ const CMDS = {
   'mode-view':      () => setMode('view'),
   'mode-edit':      () => setMode('edit'),
   'mode-split':     () => setMode('split'),
+  'mode-source':    () => setMode('source'),
+  'fullscreen':     toggleFullscreen,
 };
 
 function runCmd(name) {
@@ -3397,7 +3419,7 @@ const HOTKEYS = [
     ['Ctrl+S',         'Save'],
     ['Ctrl+Shift+S',   'Export PDF'],
     ['Ctrl+\\',        'Toggle sidebar'],
-    ['Ctrl+E',         'Toggle Read ⇄ Edit'],
+    ['Ctrl+E',         'Cycle panes: preview / both / source'],
     ['Ctrl+L',         'Align panes now (one-shot)'],
     ['Ctrl+Shift+L',   'Toggle scroll sync'],
     ['Ctrl+Shift+P',   'Performance mode (read-only; ↑↓ to step between lines)'],
@@ -3508,7 +3530,7 @@ const HELP_HOWTO_HTML = `
      a read-only preview; click a line to locate it in the source.</p>
   <p><strong>Edit</strong> mode opens the Fountain source in a textarea
      alongside the live preview — this is where you write. Toolbar buttons and
-     shortcuts act on the source. <kbd>Ctrl+E</kbd> toggles Read ⇄ Edit.</p>
+     shortcuts act on the source. <kbd>Ctrl+E</kbd> cycles the panes: preview, both, source. Read and Edit can also be toggled independently.</p>
   <p>Toggle <em>markup</em> (top-right) to show inline Fountain markers
      (<code>**bold**</code>, <code>*italic*</code>, <code>_underline_</code>,
      <code>[[notes]]</code>) in the preview.</p>
@@ -4202,6 +4224,29 @@ function openRehearsalPicker() {
 }
 
 // ---------- performance mode ----------
+// Real browser fullscreen, for working with the chrome out of the way. This is
+// deliberately NOT performance mode: that one also hides the sidebar and editor
+// and enlarges the type for rehearsal. Fullscreen just reclaims the screen and
+// leaves the app exactly as it is, so it composes with any pane layout.
+function toggleFullscreen() {
+  const el = document.documentElement;
+  if (!document.fullscreenElement) {
+    const p = el.requestFullscreen ? el.requestFullscreen() : null;
+    if (p && p.catch) p.catch(() => status('Fullscreen was refused by the browser', true));
+  } else if (document.exitFullscreen) {
+    document.exitFullscreen();
+  }
+}
+
+function syncFullscreenButton() {
+  const b = document.getElementById('btn-fullscreen');
+  if (!b) return;
+  const on = !!document.fullscreenElement;
+  b.classList.toggle('active', on);
+  b.title = on ? 'Leave fullscreen' : 'Fullscreen';
+}
+document.addEventListener('fullscreenchange', syncFullscreenButton);
+
 function togglePerform() {
   if (document.body.classList.contains('perform')) {
     document.body.classList.remove('perform');
@@ -4275,6 +4320,7 @@ function wire() {
   $('btn-export').onclick = exportPdf;
   $('btn-export-fdx').onclick = exportFdx;
   $('btn-perform').onclick = togglePerform;
+  { const b = $('btn-fullscreen'); if (b) { b.onclick = toggleFullscreen; syncFullscreenButton(); } }
   $('btn-stats').onclick = openStats;
   $('btn-cards').onclick = openCards;
   $('btn-sidebar-toggle').onclick = toggleSidebar;
@@ -4286,7 +4332,7 @@ function wire() {
   $('btn-sync').onclick = toggleSplitSync;
 
   for (const btn of document.querySelectorAll('.mode-switch button')) {
-    btn.onclick = () => setMode(btn.dataset.mode);
+    btn.onclick = () => togglePane(btn.dataset.pane);
   }
   // Format toolbar buttons (data-cmd dispatch).
   for (const btn of document.querySelectorAll('#format-toolbar button[data-cmd]')) {

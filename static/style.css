@@ -1021,3 +1021,7 @@ body.cloud-mode .editor[readonly] { background: var(--sidebar); cursor: default;
   padding-top: 0.9rem;
   border-top: 1px solid var(--rule);
 }
+
+/* Toolbar icon buttons that carry an on/off state (scroll sync, fullscreen).
+   .mode-switch already has its own rule; this covers the standalone ones. */
+.icon-btn.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
