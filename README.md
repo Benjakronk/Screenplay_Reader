@@ -157,6 +157,11 @@ What changes when you are signed in:
 - **Sharing.** Scripts other people shared with you appear under `Shared/`.
   Access is `editor` or `viewer`; a viewer's writes are refused by the server,
   not just hidden in the UI.
+- **Your work stays yours.** The sidebar has **⤴ Export** to download the open
+  script as a plain `.fountain` file, **💾 Backup** to download every script you
+  own as one JSON archive, and **⤵ Import** / **☁ Import backup** to bring
+  either back in. Nothing is trapped in the cloud: a screenplay is a text file,
+  and you can always hold a copy.
 - **Your account.** The initial in the toolbar opens a dialog to change your
   password or sign out. Changing it requires the current one and signs you out
   everywhere else, so it doubles as "evict whoever else is signed in as me".

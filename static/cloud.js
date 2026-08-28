@@ -287,15 +287,22 @@ window.Cloud = (function () {
       importBtn.title = 'Import a script (.fountain, .spmd, .txt or Final Draft .fdx)';
     }
 
-    // Bring across whatever you wrote before you had an account: export a
-    // backup from the offline build, import it here.
+    // Getting work in and out as plain files. Cloud storage is the default, but
+    // a screenplay should never be trapped in one.
     const sidebarTools = importBtn?.parentElement;
     if (sidebarTools) {
-      const b = document.createElement('button');
-      b.textContent = '☁ Import backup';
-      b.title = 'Copy scripts from an offline backup file into your cloud account';
-      b.onclick = importBackup;
-      sidebarTools.appendChild(b);
+      const mk = (label, title, fn) => {
+        const b = document.createElement('button');
+        b.textContent = label; b.title = title; b.onclick = fn;
+        return b;
+      };
+      sidebarTools.insertBefore(
+        mk('⤴ Export', 'Download the open script as a .fountain file', exportCurrentFile),
+        importBtn.nextSibling);
+      sidebarTools.appendChild(
+        mk('💾 Backup', 'Download every script you own as one JSON file', backupAll));
+      sidebarTools.appendChild(
+        mk('☁ Import backup', 'Restore scripts from a backup file', importBackup));
     }
   }
 
@@ -341,6 +348,76 @@ window.Cloud = (function () {
       if (typeof window.loadTree === 'function') window.loadTree();
     };
     input.click();
+  }
+
+  // ---------- taking work back out ----------
+  //
+  // Cloud mode stores everything server-side, but a screenplay is a plain text
+  // file and people reasonably want one on their own disk - to archive, to hand
+  // to someone, or simply to not depend on a VPS. These are the counterparts to
+  // the offline build's Export and Backup buttons, reading from the API rather
+  // than IndexedDB.
+
+  function downloadText(filename, text, mime) {
+    const blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // The open script, exactly as it stands. Taken from the editor rather than
+  // refetched, so it matches what is on screen including edits that have not
+  // yet round-tripped through the CRDT.
+  function exportCurrentFile() {
+    const path = currentPath();
+    if (!path) { notify('Open a script first'); return; }
+    const ta = $('editor');
+    const text = ta ? ta.value : '';
+    downloadText(path.split('/').pop(), text);
+    notify('Downloaded ' + path.split('/').pop());
+  }
+
+  // Every script you own, as one JSON file - the same shape Import backup
+  // reads, so this is a genuine offline archive and restore path.
+  //
+  // Scripts shared WITH you are skipped: they are someone else's, and restoring
+  // them would silently create your own copies.
+  async function backupAll() {
+    notify('Building backup…');
+    let tree;
+    try { tree = (await api('/api/tree')).tree; }
+    catch (e) { notify('Backup failed: ' + e.message, true); return; }
+
+    const paths = [];
+    (function walk(entries, underShared) {
+      for (const e of entries || []) {
+        if (e.type === 'dir') walk(e.children, underShared || e.name === 'Shared');
+        else if (!underShared) paths.push(e.path);
+      }
+    })(tree, false);
+
+    if (!paths.length) { notify('Nothing to back up'); return; }
+
+    const files = [];
+    let failed = 0;
+    for (let i = 0; i < paths.length; i++) {
+      notify(`Backing up ${i + 1}/${paths.length}…`);
+      try {
+        const info = await api('/api/file?path=' + encodeURIComponent(paths[i]));
+        files.push({ path: paths[i], content: info.content || '' });
+      } catch { failed++; }
+    }
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadText(`faaglarna-backup-${stamp}.json`,
+      JSON.stringify({ kind: 'faaglarna-backup', version: 1, files }, null, 1),
+      'application/json');
+    notify(`Backed up ${files.length} script(s)` + (failed ? `, ${failed} failed` : ''));
   }
 
   // Imports a single script file. app.js binds the Import button to importFdx,
@@ -698,7 +775,7 @@ window.Cloud = (function () {
     enabled, sameOrigin, active, probe, login, logout, acceptInvite, authHeaders, api,
     adaptUi, wrapApp, openSignInDialog, openShareDialog, openAccountDialog,
     joinDocument, leaveDocument,
-    importBackup, importScriptFile,
+    importBackup, importScriptFile, exportCurrentFile, backupAll,
     get base() { return base; },
     get user() { return user; },
     hasInvite: () => new URLSearchParams(location.search).has('invite'),
