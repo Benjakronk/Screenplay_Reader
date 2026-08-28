@@ -596,6 +596,30 @@ window.Cloud = (function () {
       if (signedIn) await joinDocument(path);
     };
 
+    // In cloud mode a MANUAL save is the only thing that records a version -
+    // autosave is deliberately a no-op server-side, because the CRDT has
+    // already persisted the text. But app.js clears state.dirty after every
+    // successful save including autosaves, so by the time you press Ctrl+S the
+    // document is no longer dirty and saveScript() returns at its
+    // `if (!state.dirty && !opts.force) return` gate, never reaching the
+    // server. No version is ever created.
+    //
+    // opts.force only bypasses that gate; the server's overwrite flag is
+    // opts.overwrite, which is left alone. Repeated saves do not pile up
+    // duplicates - snapshotIfChanged() skips when the content is unchanged.
+    const origSave = window.saveScript;
+    window.saveScript = async function (opts = {}) {
+      const manual = !opts.auto;
+      const out = await origSave.call(this, manual ? { ...opts, force: true } : opts);
+      // "Save" means "mark a version" here, so the button stays useful after
+      // one rather than greying out until the next keystroke.
+      if (manual && collabActive()) {
+        const b = $('btn-save');
+        if (b) b.disabled = false;
+      }
+      return out;
+    };
+
     // Undo must be per-user in a shared document. app.js's stack snapshots the
     // WHOLE text, so replaying one would also wipe out whatever a collaborator
     // typed in the meantime; Yjs's UndoManager only reverts this browser's own
