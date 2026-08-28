@@ -558,10 +558,19 @@ FADE OUT.
     if (m === 'cloud') {
       window.Cloud.wrapApp();
       window.Cloud.adaptUi();
-      // The first document is opened by app.js before our wrapper is installed,
-      // so join its collaboration session explicitly.
-      const path = (typeof state !== 'undefined' && state.currentPath) || null;
-      if (path) window.Cloud.joinDocument(path);
+
+      // wrapApp() covers every LATER openScript, but app.js reopens the
+      // last-used document from loadTree().then(...) at the end of the file,
+      // and that can still be in flight when `load` fires — in which case the
+      // first document opens unwrapped and never joins its collaboration
+      // session. Watch briefly for it to land.
+      let tries = 0;
+      const joinInitial = () => {
+        const path = (typeof state !== 'undefined' && state.currentPath) || null;
+        if (path) { window.Cloud.joinDocument(path); return; }
+        if (++tries < 20) setTimeout(joinInitial, 150);   // give up after ~3s
+      };
+      joinInitial();
     }
   });
 })();

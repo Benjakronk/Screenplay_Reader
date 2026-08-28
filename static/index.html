@@ -152,20 +152,27 @@
   <div id="modal-root" class="modal-root hidden" aria-hidden="true"></div>
   <div id="ctx-menu" class="ctx-menu hidden" role="menu"></div>
 
-  <!-- Load order matters:
+  <!-- Load order matters, and backend.js MUST come before app.js:
        config.js  – where the cloud API lives (empty = no cloud mode at all)
        collab.js  – the Y.Text <-> textarea binding; fetches its Yjs bundle on
                     demand, so offline visitors never download it
        cloud.js   – must precede backend.js: it captures the UNWRAPPED fetch,
-                    and backend.js's wrapper waits on a decision that cloud.js
-                    takes part in
-       backend.js – installs the fetch shim and picks the backend. Last. -->
+                    and backend.js's wrapper waits on a decision cloud.js takes
+                    part in
+       backend.js – installs the fetch shim, then picks the backend
+       app.js     – LAST, because it calls loadTree() at the end of the file,
+                    synchronously at parse time. Loaded before backend.js, that
+                    first /api/tree request used the native fetch and bypassed
+                    the shim entirely: no auth header in cloud mode (401), and
+                    no IndexedDB fallback in offline mode (404). Everything
+                    backend.js needs from app.js is reached inside functions or
+                    the load listener, so it is safe here. -->
   <script src="config.js"></script>
   <script src="fountain.js"></script>
   <script src="pagination.js"></script>
   <script src="collab.js"></script>
   <script src="cloud.js"></script>
-  <script src="app.js"></script>
   <script src="backend.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
