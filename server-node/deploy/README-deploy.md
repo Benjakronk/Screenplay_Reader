@@ -178,6 +178,66 @@ ls -lh /var/backups/faaglarna        # a .sql.gz must appear
 `doc_state.ydoc` is `BYTEA`, which `pg_dump` handles fine. Restore-test the
 first dump into a scratch database so you know the rollback works.
 
+## 9b. Serving the frontend from this VPS (instead of GitHub Pages)
+
+The frontend was originally on GitHub Pages. It is now served from this box, on
+the **same origin** as the API:
+
+```
+https://faaglarna.lektorensrud.no/          -> /srv/faaglarna-web/static
+https://faaglarna.lektorensrud.no/api/      -> Node 127.0.0.1:3001
+https://faaglarna.lektorensrud.no/collab/   -> Hocuspocus 127.0.0.1:3003
+```
+
+One origin means there is no cross-origin request at all - no preflights, no
+`ALLOWED_ORIGINS` to keep in step with the frontend's address, and no way to get
+CORS subtly wrong. `backend.js` still resolves correctly: its probe of
+`/api/tree` returns 401 (not `ok`), so it falls through to the cloud branch,
+which then talks to its own origin.
+
+### DNS
+
+Replace the CNAME with an A record - a name cannot have both:
+
+| Type | Host | Value |
+|---|---|---|
+| ~~CNAME~~ | ~~`faaglarna`~~ | ~~`benjakronk.github.io.`~~ **delete** |
+| `A` | `faaglarna` | the VPS IPv4 |
+
+Then clear the custom domain in the repo's **Settings -> Pages**, so GitHub stops
+claiming a name that no longer points at it.
+
+### Deploy
+
+The repository is public, so the box pulls it directly - no scp, and the
+deployed commit is always identifiable:
+
+```bash
+sudo mkdir -p /srv/faaglarna-web
+sudo chown "$USER" /srv/faaglarna-web
+git clone https://github.com/Benjakronk/Screenplay_Reader.git /srv/faaglarna-web
+```
+
+Updating the frontend afterwards is one command:
+
+```bash
+cd /srv/faaglarna-web && git pull
+```
+
+No restart or reload needed - nginx serves the files from disk.
+
+### nginx + TLS
+
+```bash
+sudo cp /srv/faaglarna-api/deploy/nginx-faaglarna-web.conf         /etc/nginx/sites-available/faaglarna.lektorensrud.no
+sudo ln -s /etc/nginx/sites-available/faaglarna.lektorensrud.no            /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d faaglarna.lektorensrud.no
+```
+
+`api-faaglarna.lektorensrud.no` keeps working as before. Keeping it costs
+nothing and leaves the API reachable on its own name.
+
 ## 10b. Off-site copy of the backups - NOT set up, deliberately
 
 `/var/backups` and `/var/lib/postgresql` are the same filesystem, so the nightly

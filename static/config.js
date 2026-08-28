@@ -13,7 +13,12 @@
 // URL is derived from it (https -> wss, + /collab), so there is nothing else
 // to keep in sync.
 //
-// LEAVE THIS EMPTY until the backend is actually up. The moment it is set, the
-// app offers a sign-in prompt on every visit — which is just noise if there is
-// nothing behind it yet. See docs/TODO.md step 11.
-window.FAAGLARNA_CLOUD = '';
+// SAME ORIGIN. The frontend is served from the same host as the API, so this
+// names the page's own origin. That means no cross-origin requests, no
+// preflights, and no CORS to get wrong — the API's CORS middleware stays in
+// place but never has to do anything.
+//
+// It is written out in full rather than derived from location.origin so that a
+// copy of the app served from anywhere else — the GitHub Pages build, or a file
+// opened locally — still talks to the real backend instead of to itself.
+window.FAAGLARNA_CLOUD = 'https://faaglarna.lektorensrud.no';
