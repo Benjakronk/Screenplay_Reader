@@ -166,29 +166,94 @@ window.Comments = (function () {
     return host;
   }
 
-  function redrawOverlay() {
+  // Rebuilding is EXPENSIVE: textareaRangeRects lays out the whole document in
+  // the mirror div once per range. On a feature-length script that is tens of
+  // kilobytes of text laid out per comment, so it must never run on a scroll or
+  // a keystroke - doing so froze and then crashed the tab.
+  //
+  // Scrolling does not move the boxes relative to the text, only relative to the
+  // viewport, so the host is offset with a transform instead. That is one style
+  // write per scroll event and no layout at all.
+
+  // Measures MANY ranges in a single mirror layout. app.js's textareaRangeRects
+  // lays out the whole document once per range, which on a feature-length script
+  // means tens of kilobytes of text laid out per comment. Batching turns that
+  // into one pass.
+  //
+  // Ranges must be walked in order and not overlap for a single pass to work, so
+  // anything that overlaps its predecessor falls back to a measurement of its
+  // own. Overlapping comments are legitimate but uncommon, so the common case
+  // stays at one layout.
+  function batchRangeRects(ta, ranges) {
+    const sorted = ranges.slice().sort((a, b) => a.from - b.from || a.to - b.to);
+    const inline = [], spill = [];
+    let pos = 0;
+    for (const r of sorted) {
+      if (r.from >= pos) { inline.push(r); pos = r.to; } else { spill.push(r); }
+    }
+
+    const out = new Map();
+    if (inline.length) {
+      const div = configTaMirror(ta);
+      div.textContent = '';
+      const spans = [];
+      let at = 0;
+      for (const r of inline) {
+        if (r.from > at) div.appendChild(document.createTextNode(ta.value.slice(at, r.from)));
+        const sp = document.createElement('span');
+        sp.textContent = ta.value.slice(r.from, r.to);
+        div.appendChild(sp);
+        spans.push([r, sp]);
+        at = r.to;
+      }
+      div.appendChild(document.createTextNode(ta.value.slice(at)));
+      const mr = div.getBoundingClientRect();
+      for (const [r, sp] of spans) {
+        out.set(r.key, Array.from(sp.getClientRects()).map((c) => ({
+          top: c.top - mr.top, left: c.left - mr.left, width: c.width, height: c.height,
+        })));
+      }
+      div.textContent = '';
+    }
+    for (const r of spill) out.set(r.key, textareaRangeRects(ta, r.from, r.to));
+    return out;
+  }
+
+  function rebuildOverlay() {
     const host = overlayHost();
     const ta = $('editor');
     if (!host || !ta) return;
     host.innerHTML = '';
-    if (!live()) return;
+    if (!live() || typeof textareaRangeRects !== 'function') return;
 
-    for (const c of list()) {
-      if (c.orphaned || c.resolved) continue;      // nothing to point at
-      if (typeof textareaRangeRects !== 'function') return;
-      for (const r of textareaRangeRects(ta, c.from, c.to)) {
+    const shown = list().filter((c) => !c.orphaned && !c.resolved);
+    if (!shown.length) return;
+    const rects = batchRangeRects(ta, shown.map((c) => ({ key: c.id, from: c.from, to: c.to })));
+
+    for (const c of shown) {
+      for (const r of (rects.get(c.id) || [])) {
         const box = document.createElement('div');
         box.className = 'comment-hl-box';
         box.dataset.id = c.id;
         box.title = `${c.authorName}: ${c.replies[0] ? c.replies[0].text : ''}`;
-        box.style.top = (r.top - ta.scrollTop) + 'px';
-        box.style.left = (r.left - ta.scrollLeft) + 'px';
+        // Content coordinates - the scroll offset lives on the host.
+        box.style.top = r.top + 'px';
+        box.style.left = r.left + 'px';
         box.style.width = r.width + 'px';
         box.style.height = r.height + 'px';
         box.onclick = () => focusComment(c.id);
         host.appendChild(box);
       }
     }
+    positionOverlay();
+  }
+
+  // Cheap: called on every scroll event.
+  function positionOverlay() {
+    const host = $('comment-hl');
+    const ta = $('editor');
+    if (!host || !ta) return;
+    host.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
   }
 
   // ---------- sidebar panel ----------
@@ -348,16 +413,17 @@ window.Comments = (function () {
 
   let unsubscribe = null;
   let observed = null;          // the Y.Array we attached observeDeep to
-  let redrawQueued = false;
 
+  // Debounced, not rAF-throttled: onDocChange fires on every keystroke, and a
+  // rebuild is far too heavy to run at that rate on a long script.
+  let redrawTimer = null;
   function redraw() {
-    if (redrawQueued) return;
-    redrawQueued = true;
-    requestAnimationFrame(() => {
-      redrawQueued = false;
-      redrawOverlay();
+    clearTimeout(redrawTimer);
+    redrawTimer = setTimeout(() => {
+      redrawTimer = null;
+      rebuildOverlay();
       renderPanel();
-    });
+    }, 150);
   }
 
   // Called when a document's collaboration session starts.
@@ -370,7 +436,7 @@ window.Comments = (function () {
     const ta = $('editor');
     if (ta && !ta.dataset.commentScroll) {
       ta.dataset.commentScroll = '1';
-      ta.addEventListener('scroll', redrawOverlay);
+      ta.addEventListener('scroll', positionOverlay);
     }
     redraw();
   }
