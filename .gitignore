@@ -5,3 +5,6 @@ __pycache__/
 # Editor / OS cruft
 .DS_Store
 Thumbs.db
+
+# One-off import file generated from scripts/ - not part of the project.
+faaglarna-import.json

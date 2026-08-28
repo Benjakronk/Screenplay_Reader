@@ -279,9 +279,17 @@ window.Cloud = (function () {
     actions.appendChild(shareBtn);
     actions.appendChild(acct);
 
+    // app.js binds this to importFdx, which only understands Final Draft XML.
+    // Widen it so a plain .fountain file can be brought in too.
+    const importBtn = document.getElementById('btn-import');
+    if (importBtn) {
+      importBtn.onclick = importScriptFile;
+      importBtn.title = 'Import a script (.fountain, .spmd, .txt or Final Draft .fdx)';
+    }
+
     // Bring across whatever you wrote before you had an account: export a
     // backup from the offline build, import it here.
-    const sidebarTools = document.getElementById('btn-import')?.parentElement;
+    const sidebarTools = importBtn?.parentElement;
     if (sidebarTools) {
       const b = document.createElement('button');
       b.textContent = '☁ Import backup';
@@ -331,6 +339,57 @@ window.Cloud = (function () {
              (skipped ? `, skipped ${skipped} already here` : '') +
              (failed ? `, ${failed} failed` : ''), failed > 0);
       if (typeof window.loadTree === 'function') window.loadTree();
+    };
+    input.click();
+  }
+
+  // Imports a single script file. app.js binds the Import button to importFdx,
+  // which only understands Final Draft XML - so in cloud mode there was no way
+  // to bring in a plain .fountain file at all. This accepts both and routes on
+  // the extension: .fdx through the sidecar's converter, everything else
+  // straight to /api/new.
+  function importScriptFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.fountain,.spmd,.txt,.fdx,application/xml,text/xml,text/plain';
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+
+      let text;
+      try { text = await file.text(); }
+      catch { notify('Could not read that file', true); return; }
+
+      const name = file.name;
+      notify('Importing ' + name + '…');
+
+      try {
+        if (/\.fdx$/i.test(name)) {
+          const out = await api('/api/import/fdx', {
+            method: 'POST', body: { name, content: text },
+          });
+          notify('Imported as ' + out.path);
+        } else {
+          // Find a free name rather than failing outright on a collision.
+          const stem = name.replace(/\.[^.]*$/, '') || 'imported';
+          const ext = (name.match(/\.[^.]*$/) || ['.fountain'])[0].toLowerCase();
+          const okExt = ['.fountain', '.spmd', '.txt'].includes(ext) ? ext : '.fountain';
+          let path = stem + okExt;
+          for (let n = 1; n < 100; n++) {
+            try {
+              await api('/api/new', { method: 'POST', body: { path, content: text } });
+              break;
+            } catch (e) {
+              if (!/already exists/i.test(e.message)) throw e;
+              path = `${stem}-${n}${okExt}`;
+            }
+          }
+          notify('Imported as ' + path);
+        }
+        if (typeof window.loadTree === 'function') window.loadTree();
+      } catch (e) {
+        notify('Import failed: ' + e.message, true);
+      }
     };
     input.click();
   }
@@ -639,7 +698,7 @@ window.Cloud = (function () {
     enabled, sameOrigin, active, probe, login, logout, acceptInvite, authHeaders, api,
     adaptUi, wrapApp, openSignInDialog, openShareDialog, openAccountDialog,
     joinDocument, leaveDocument,
-    importBackup,
+    importBackup, importScriptFile,
     get base() { return base; },
     get user() { return user; },
     hasInvite: () => new URLSearchParams(location.search).has('invite'),
