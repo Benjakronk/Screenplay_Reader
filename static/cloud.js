@@ -558,16 +558,25 @@ window.Cloud = (function () {
   // ---------- wrapping app.js ----------
 
   let wrapped = false;
+
+  // collab.js should always be loaded, but if it ever fails to parse or 404s,
+  // every call site below would throw and take openScript with it - losing the
+  // whole app rather than just live editing. Degrade to "no collaboration".
+  const collabActive = () => {
+    try { return !!(window.Collab && window.Collab.active()); } catch { return false; }
+  };
+
   function wrapApp() {
     if (wrapped) return;
     wrapped = true;
+    if (!window.Collab) notify('Live editing unavailable (collab.js did not load)', true);
 
     // Every local mutation in app.js lands here, so this is the single point
     // where the textarea's new contents reach the CRDT.
     const origMarkDirty = window.markDirty;
     window.markDirty = function () {
       origMarkDirty.apply(this, arguments);
-      if (window.Collab.active()) window.Collab.syncFromTextarea();
+      if (collabActive()) window.Collab.syncFromTextarea();
     };
 
     // The one edit path that does NOT call markDirty: it uppercases a scene
@@ -576,13 +585,13 @@ window.Cloud = (function () {
     const origSmart = window.applySmartUppercase;
     window.applySmartUppercase = function () {
       origSmart.apply(this, arguments);
-      if (window.Collab.active()) window.Collab.syncFromTextarea();
+      if (collabActive()) window.Collab.syncFromTextarea();
     };
 
     // Switch documents: leave the old session, join the new one.
     const origOpen = window.openScript;
     window.openScript = async function (path) {
-      if (window.Collab.active()) leaveDocument();
+      if (collabActive()) leaveDocument();
       await origOpen.apply(this, arguments);
       if (signedIn) await joinDocument(path);
     };
@@ -593,11 +602,11 @@ window.Cloud = (function () {
     // changes. Fall through to app.js's own undo when not collaborating.
     const origUndo = window.histUndo, origRedo = window.histRedo;
     window.histUndo = function () {
-      if (window.Collab.active()) { window.Collab.undo(); repaint(); return; }
+      if (collabActive()) { window.Collab.undo(); repaint(); return; }
       return origUndo.apply(this, arguments);
     };
     window.histRedo = function () {
-      if (window.Collab.active()) { window.Collab.redo(); repaint(); return; }
+      if (collabActive()) { window.Collab.redo(); repaint(); return; }
       return origRedo.apply(this, arguments);
     };
   }
