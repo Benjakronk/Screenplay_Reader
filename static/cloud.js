@@ -195,10 +195,12 @@ window.Cloud = (function () {
     renderPeers();
     markReadOnly(info.role === 'viewer');
     if (window.Comments) window.Comments.attach();
+    if (window.Suggestions) window.Suggestions.attach();
   }
 
   function leaveDocument() {
     if (window.Comments) window.Comments.detach();
+    if (window.Suggestions) window.Suggestions.detach();
     if (window.Collab) window.Collab.detach();
     peers = [];
     renderPeers();

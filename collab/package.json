@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node test-binding.mjs && node test-comments.mjs",
-    "test:comments": "node test-comments.mjs"
+    "test": "node test-binding.mjs && node test-comments.mjs && node test-suggestions.mjs",
+    "test:comments": "node test-comments.mjs",
+    "test:suggestions": "node test-suggestions.mjs"
   },
   "dependencies": {
     "@hocuspocus/provider": "^4.6.0",

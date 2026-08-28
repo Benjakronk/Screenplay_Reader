@@ -1091,3 +1091,66 @@ body.theme-night .comment-hl-box { background: rgba(255, 210, 80, 0.22); }
 }
 .comment-actions button:hover:not(:disabled) { border-color: var(--accent); }
 .comment-actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- suggestions (tracked changes) ----------
+   A textarea cannot strike through or recolour its own glyphs, so proposed
+   changes are marked with overlay boxes behind the text: green for text
+   proposed for addition, red with a rule through it for text proposed for
+   removal. The rule is drawn with a gradient, since an overlay cannot apply
+   text-decoration to the characters underneath it. */
+
+#suggest-hl { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.suggest-hl-box { position: absolute; border-radius: 2px; }
+.suggest-hl-box.insert {
+  background: rgba(60, 160, 90, 0.22);
+  border-bottom: 2px solid rgba(40, 130, 70, 0.8);
+}
+.suggest-hl-box.delete {
+  background: rgba(200, 60, 60, 0.16);
+  background-image: linear-gradient(transparent 46%, rgba(180, 40, 40, 0.85) 46%,
+                                    rgba(180, 40, 40, 0.85) 54%, transparent 54%);
+}
+body.theme-dark .suggest-hl-box.insert,
+body.theme-night .suggest-hl-box.insert { background: rgba(110, 210, 140, 0.20); }
+body.theme-dark .suggest-hl-box.delete,
+body.theme-night .suggest-hl-box.delete { background: rgba(240, 120, 120, 0.16); }
+
+/* Suggest mode is a different mode of working, so the editor says so. */
+body.suggesting .editor { box-shadow: inset 0 2px 0 var(--accent); }
+#btn-suggest.hidden { display: none; }
+
+#suggestions-panel.hidden { display: none; }
+#suggestions-list { padding: 0 0.4rem 0.6rem; }
+#suggest-count { color: var(--muted); font-weight: 400; }
+
+.suggest-item {
+  border: 1px solid var(--rule); border-left-width: 3px; border-radius: 6px;
+  padding: 0.4rem 0.5rem; margin-bottom: 0.45rem; background: var(--paper);
+}
+.suggest-item.insert { border-left-color: rgba(40, 130, 70, 0.8); }
+.suggest-item.delete { border-left-color: rgba(180, 40, 40, 0.8); }
+.suggest-item.orphaned { border-style: dashed; opacity: 0.7; }
+
+.suggest-head { display: flex; gap: 0.4rem; align-items: baseline; margin-bottom: 0.25rem; }
+.suggest-kind {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 0.05rem 0.3rem; border-radius: 3px; color: #fff;
+}
+.suggest-item.insert .suggest-kind { background: rgba(40, 130, 70, 0.85); }
+.suggest-item.delete .suggest-kind { background: rgba(180, 40, 40, 0.85); }
+.suggest-who { font-size: 0.75rem; color: var(--muted); }
+
+.suggest-text {
+  font: 0.78rem var(--courier); cursor: pointer;
+  background: var(--sidebar); border-radius: 3px; padding: 0.2rem 0.35rem;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.suggest-item.delete .suggest-text { text-decoration: line-through; }
+
+.suggest-actions { display: flex; gap: 0.3rem; margin-top: 0.35rem; }
+.suggest-actions button {
+  flex: 1; border: 1px solid var(--rule); border-radius: 4px; background: var(--sidebar);
+  color: inherit; font-size: 0.72rem; padding: 0.15rem 0.4rem; cursor: pointer;
+}
+.suggest-actions button:hover:not(:disabled) { border-color: var(--accent); }
+.suggest-actions button:disabled { opacity: 0.5; cursor: default; }

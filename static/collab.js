@@ -84,6 +84,9 @@ window.Collab = (function () {
     }, LOCAL_ORIGIN);
     lastText = now;
     publishCursor();
+    // The diff is exactly the shape of a tracked change, so suggest mode can
+    // record it as one rather than recomputing anything.
+    fireLocalEdit(d);
     fireDocChange();
   }
 
@@ -241,11 +244,21 @@ window.Collab = (function () {
     }
   }
 
+  // Fired after a LOCAL edit is applied, carrying the {from, removed, inserted}
+  // span that was applied. Suggest mode turns that span into a tracked change.
+  const editHooks = new Set();
+  function onLocalEdit(fn) { editHooks.add(fn); return () => editHooks.delete(fn); }
+  function fireLocalEdit(d) {
+    for (const fn of editHooks) {
+      try { fn(d); } catch { /* as above */ }
+    }
+  }
+
   return {
     attach, detach, active, syncFromTextarea, undo, redo, peers, colorFor,
     // The CRDT itself, for features that anchor into the same document.
     // Null when not collaborating - callers must check.
-    onDocChange,
+    onDocChange, onLocalEdit,
     get Y() { return Y; },
     get ydoc() { return ydoc; },
     get ytext() { return ytext; },
