@@ -374,7 +374,7 @@ img, svg { max-width: 100%; }
     <div class="facts">
       <div class="fact"><span class="fact-n">77</span><span class="fact-l">tests passing</span></div>
       <div class="fact"><span class="fact-n">1</span><span class="fact-l">line changed in app.js</span></div>
-      <div class="fact"><span class="fact-n">3</span><span class="fact-l">backends, one frontend</span></div>
+      <div class="fact"><span class="fact-n">5</span><span class="fact-l">bugs found in the browser</span></div>
       <div class="fact"><span class="fact-n">0</span><span class="fact-l">export code duplicated</span></div>
     </div>
   </header>
@@ -512,7 +512,7 @@ img, svg { max-width: 100%; }
             <svg viewBox="0 0 720 310" role="img" aria-label="Request flow from the browser through nginx to the Node service, which talks to a Python export sidecar and PostgreSQL.">
               <rect class="svg-box" x="20" y="45" width="170" height="90" rx="7"/>
               <text class="svg-t" x="105" y="76" text-anchor="middle">browser</text>
-              <text class="svg-t-sm" x="105" y="96" text-anchor="middle">GitHub Pages</text>
+              <text class="svg-t-sm" x="105" y="96" text-anchor="middle">served by the VPS</text>
               <text class="svg-t-sm" x="105" y="114" text-anchor="middle">static/</text>
 
               <rect class="svg-box" x="245" y="55" width="100" height="70" rx="7"/>
@@ -732,7 +732,7 @@ fdx.fdx_to_fountain(xml)                    -&gt; str</code></pre>
         <div class="decision">
           <div class="d-head"><h3>Bearer token, not a cookie</h3><span class="chip verified">Verified</span></div>
           <p>
-            The frontend is on <code>*.github.io</code> and the API on its own domain, so a session
+            The frontend was on <code>*.github.io</code> and the API on its own domain, so a session
             cookie is a third-party cookie and is blocked by default in current browsers.
             Ukeportalen can use cookies only because <code>ukeportalen.no</code> and
             <code>api.ukeportalen.no</code> share a registrable domain. Faaglarna's own domains
@@ -870,13 +870,25 @@ doc_versions (id, doc_id, name, timestamp, content, author_id, created_at)</code
         </p>
 
         <div class="note trap">
-          <span class="lbl">Not verified</span>
+          <span class="lbl">Verified in a browser, 28 Aug 2026</span>
           <p>
-            <strong>The browser UI end-to-end.</strong> The sign-in dialog, presence chips, share dialog
-            and the wrapping of app.js's globals have no automated coverage. The logic beneath
-            them is tested; the DOM wiring is not.
+            Live editing between two accounts, presence, sharing by invite link, account
+            creation from an invite, view-only enforcement, per-user undo, password change
+            with session eviction, all four export formats, and version history.
           </p>
-          <p><strong>The deployment itself</strong> — that needs the VPS.</p>
+          <p>
+            That pass found <strong>five bugs, every one of them in the layer with no
+            automated coverage</strong> — which is exactly where they were predicted to be:
+            app.js loading before the fetch shim; two successive wrong nginx
+            <code>location</code> forms for the collaboration socket; manual saves never
+            reaching the server, so version history stayed empty; and a race joining the
+            first document. The server, which <em>is</em> covered, produced none.
+          </p>
+          <p>
+            <strong>Still not verified:</strong> undo when one person inserts a word inside
+            a sentence another wrote. Yjs tracks character origin independently so it should
+            behave, but that interleaving has not been tried.
+          </p>
         </div>
       </section>
 
@@ -945,10 +957,14 @@ doc_versions (id, doc_id, name, timestamp, content, author_id, created_at)</code
         <h2 class="sec">Open items</h2>
         <ul>
           <li>
-                        <strong>Domains are chosen but DNS is not created yet.</strong> The frontend is
-            <code>faaglarna.lektorensrud.no</code> (a CNAME to GitHub Pages) and the API is
-            <code>api-faaglarna.lektorensrud.no</code> (an A record to the VPS). certbot's
-            HTTP-01 challenge needs the A record live before it will succeed.</li>
+                        <strong>Backups are local-only.</strong> <code>/var/backups</code> and
+            <code>/var/lib/postgresql</code> are the same filesystem, so the nightly dump
+            survives a bad migration but not a lost VM — and <code>doc_state.ydoc</code> is
+            the only copy of every script. An rclone push to personal OneDrive was built and
+            rolled back: its token is drive-wide and Microsoft's scopes cannot be confined to
+            one folder. Object storage with a per-bucket, write-only key is the answer that
+            actually restricts access.
+          </li>
           <li>
             <strong>Operations are documented but not executed</strong> — the nightly <code>pg_dump</code> of
             <code>faaglarna</code>, the restore test, and the UptimeRobot monitor on <code>/api/ready</code> all

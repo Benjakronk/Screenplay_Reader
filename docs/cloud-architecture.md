@@ -65,24 +65,48 @@ backend.
 ## Topology
 
 ```
-GitHub Pages (static/)                    Netcup VPS
+browser                                   Netcup VPS
 ┌──────────────────────┐                  ┌─────────────────────────────────────┐
-│ app.js  (unchanged)  │                  │ nginx :443  api-faaglarna.lektorensrud.no│
-│   fetch('/api/...')  │   HTTPS          │   ├─ /        ──► Node :3001        │
-│        │             │─────────────────►│   └─ /collab/ ──► Node :3003 (WS)   │
-│   backend.js shim ───┤                  │                                     │
-│     ├ local server   │                  │ one Node process, two listeners     │
-│     ├ cloud          │                  │   :3001 REST — auth, docs, history  │
-│     └ offline (IDB)  │   WebSocket      │   :3003 Hocuspocus (Yjs)            │
-│                      │─────────────────►│        │                            │
-│   collab.js          │                  │        └─ /api/export/* ──┐         │
-│     Y.Text ↔ textarea│                  │                           ▼         │
-└──────────────────────┘                  │ Python :3002 (stateless)  PostgreSQL│
+│ app.js  (unchanged)  │                  │ nginx :443  faaglarna.lektorensrud.no│
+│   fetch('/api/...')  │   HTTPS          │   ├─ /         -> /srv/faaglarna-web │
+│        │             │─────────────────►│   ├─ /api/     -> Node :3001        │
+│   backend.js shim ───┤                  │   └─ = /collab -> Node :3003 (WS)   │
+│     ├ local server   │                  │                                     │
+│     ├ cloud          │                  │ one Node process, two listeners     │
+│     └ offline (IDB)  │   WebSocket      │   :3001 REST - auth, docs, history  │
+│                      │─────────────────►│   :3003 Hocuspocus (Yjs)            │
+│   collab.js          │                  │        │                            │
+│     Y.Text <-> textarea                 │        └─ /api/export/* ──┐         │
+└──────────────────────┘                  │                          ▼          │
+                                          │ Python :3002 (stateless)  PostgreSQL│
                                           │   ReportLab + fdx         faaglarna │
                                           └─────────────────────────────────────┘
 ```
 
+**Frontend and API share one origin.** There is no cross-origin request at all:
+no preflights, no `ALLOWED_ORIGINS` to keep in step with the frontend's address,
+and no way to get CORS subtly wrong. The CORS middleware stays in place and
+simply never has to act.
+
 ## Decisions
+
+### The frontend is served from the VPS, not GitHub Pages
+
+It started on Pages. Pages never issued a certificate for the custom domain: its
+checker reported `NotServedByPagesError` while GitHub's own edge servers returned
+HTTP 200 for that exact hostname, and `benjakronk.github.io/<repo>/` returned a
+301 to it. DNS was a single clean CNAME with no conflicting records and no CAA
+anywhere. Removing and re-adding the domain did not clear it, and the account's
+plan has no support route for Pages.
+
+Rather than keep waiting on a checker contradicted by the servers behind it, the
+frontend moved onto the box already running the API. That turned out to be the
+better architecture anyway - one origin removes the whole CORS surface - so the
+outage prompted a change worth making regardless.
+
+Cost: a push no longer deploys the site on its own. `git pull` on the box does.
+The repo is public, so that needs no credentials, and the deployed commit stays
+identifiable.
 
 ### The Y.Doc is the source of truth, not a text column
 
@@ -278,12 +302,34 @@ calling the library directly, and FDX round-trips losslessly across all 148 core
 tokens of a real script. Sections and synopses do not survive, because `.fdx`
 cannot represent them — `fdx.py` documents this, and it is pre-existing.
 
-**Not verified:**
+**Verified by hand in a browser, once deployed** (2026-08-28): live editing
+between two accounts, presence, sharing by invite link, account creation from an
+invite, view-only enforcement, per-user undo, password change with session
+eviction, all four export formats, and version history.
 
-- **The browser UI end-to-end.** The sign-in dialog, presence chips, share
-  dialog and the wrapping of app.js's globals have no automated coverage. The
-  logic beneath them is tested; the DOM wiring is not.
-- **The deployment itself** — it needs the VPS.
+That pass found **five bugs, every one of them in the layer with no automated
+coverage** - which is where they were predicted to be:
+
+1. **`app.js` loaded before `backend.js`.** app.js calls `loadTree()` at parse
+   time, so the first `/api/tree` used the native fetch and bypassed the shim -
+   no auth header (401 in cloud mode; a 404 in offline mode, which is why this
+   pre-existing bug had gone unnoticed).
+2. **`location /collab/` in nginx.** The Hocuspocus provider sends the document
+   name in the protocol, not the path, and strips trailing slashes - so the
+   browser connects to exactly `/collab`, which that block did not match.
+3. **`location /collab` (the first fix) was a prefix match**, so it also
+   swallowed `/collab.js`, proxying the frontend's own script to the WebSocket
+   server. `location = /collab` is the correct form, and the config says why in
+   both directions.
+4. **Manual saves never reached the server**, so version history stayed empty -
+   see the `/api/save` section above.
+5. **A `joinDocument` race**: app.js reopens the last document from
+   `loadTree().then(...)`, which can still be in flight when `load` fires.
+
+**Still not verified:** undo when one person inserts a word inside a sentence
+another wrote. Yjs tracks character origin independently so it should behave,
+and the same-offset concurrent-insert case is covered by a test, but that exact
+interleaving has not been tried.
 
 ## Deployment shape
 
@@ -324,13 +370,18 @@ rewrite, auth header), `static/index.html` (script tags), `static/style.css`
 
 ## Open items
 
-- **Domains are chosen** — `api-faaglarna.lektorensrud.no` for the API and
-  `faaglarna.lektorensrud.no` for the frontend. DNS still has to be
-  created and propagate before certbot will succeed.
-- **Phase 5 (operations) is documented but not executed** — the nightly
-  `pg_dump` of `faaglarna`, the restore test, and the UptimeRobot monitor on
-  `/api/ready` all need the server.
-- The Yjs bundle is committed rather than built in CI. That keeps
-  `python server.py` working with no npm and the Pages workflow untouched, but
-  it must be regenerated by hand (`cd collab && npm run build`) when versions
-  are bumped.
+- **Backups are local-only.** `/var/backups` and `/var/lib/postgresql` are the
+  same filesystem, so the nightly dump survives a bad migration but not a lost
+  VM - and `doc_state.ydoc` is the only copy of every script. An rclone push to
+  personal OneDrive was built and rolled back: its token is drive-wide and
+  Microsoft's scopes cannot be confined to one folder. See
+  `../server-node/deploy/README-deploy.md` section 10b; object storage with a
+  per-bucket write-only key is the answer that actually restricts access.
+- **The Yjs bundle is committed, not built in CI.** That keeps
+  `python server.py` working with no npm, but it must be regenerated by hand
+  (`cd collab && npm run build`) whenever the pinned versions move.
+- **`backup-ukeportalen.sh` has the same `cd /` bug** fixed here: run by hand
+  from an admin shell, its `find` prune fails because postgres cannot read
+  `/home/admin`. Harmless under cron, which runs from postgres's own home.
+- **The VPS has no working IPv6.** Nothing depends on it, but an AAAA record for
+  any service on that box would break IPv6-capable clients.
