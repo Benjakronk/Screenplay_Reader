@@ -73,6 +73,9 @@ function setZoom(v) {
 }
 function applyZoom(v) {
   document.documentElement.style.setProperty('--zoom', String(v));
+  // The editor's type size follows --zoom, so a character is now a different
+  // width and the column has to be re-measured around it.
+  try { relayoutEditor(); } catch { /* before the editor exists, at boot */ }
 }
 function zoomIn()    { const v = setZoom(getZoom() + ZOOM_STEP); status(`Zoom ${Math.round(v * 100)}%`); }
 function zoomOut()   { const v = setZoom(getZoom() - ZOOM_STEP); status(`Zoom ${Math.round(v * 100)}%`); }
@@ -821,6 +824,78 @@ function status(msg, isError) {
 // ---------- mode switching ----------
 // Modes: 'view'  = paginated, WYSIWYG editable (default — industry-standard)
 //        'split' = page view + raw source textarea side-by-side
+// ---------- the source measure ----------
+//
+// With the preview hidden the edit pane takes the whole window, so the source
+// is held to a column of MEASURE_CH characters, centred with padding. In px,
+// computed here, deliberately.
+//
+// CSS could centre it with `max(1.5rem, calc((100% - 80ch) / 2))`, and that was
+// the first attempt. It renders correctly and breaks everything drawn on top:
+// the hidden mirror that measures text geometry copies the textarea's padding
+// as a STRING, into an element that lives in a different containing block. A
+// percentage surviving into that string resolves against the wrong element, and
+// what getComputedStyle returns for a padding written as a math function with a
+// percentage in it is not dependably a pixel value in the first place. Find
+// highlights, comment and suggestion boxes, blame stripes and the faux caret
+// all read that padding. Resolving the number here leaves nothing to interpret.
+const MEASURE_CH = 80;
+
+// Width of one character in the editor's own font, measured rather than assumed
+// — the fallback font is not necessarily the one we asked for, and the size
+// tracks the zoom.
+let _chProbe = null;
+function editorCharWidth(ta) {
+  const cs = getComputedStyle(ta);
+  if (!_chProbe) {
+    _chProbe = document.createElement('span');
+    _chProbe.setAttribute('aria-hidden', 'true');
+    _chProbe.style.cssText =
+      'position:absolute;visibility:hidden;white-space:pre;top:0;left:-9999px;';
+    document.body.appendChild(_chProbe);
+  }
+  _chProbe.style.fontFamily = cs.fontFamily;
+  _chProbe.style.fontSize = cs.fontSize;
+  _chProbe.style.fontWeight = cs.fontWeight;
+  _chProbe.style.letterSpacing = cs.letterSpacing;
+  _chProbe.textContent = '0'.repeat(100);
+  return (_chProbe.getBoundingClientRect().width / 100) || 8;
+}
+
+function applyEditorMeasure() {
+  const ta = $('editor');
+  if (!ta) return false;
+  if (state.mode !== 'source') {
+    if (!ta.style.paddingLeft) return false;
+    ta.style.paddingLeft = ta.style.paddingRight = '';
+    return true;
+  }
+  const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const base = 1.5 * root;                          // the same 1.5rem as every other mode
+  // The BORDER-box width, which does not itself depend on the padding we are
+  // about to set — measuring the content box here would oscillate.
+  const width = ta.getBoundingClientRect().width;
+  if (!width) return false;
+  const pad = Math.max(base, (width - MEASURE_CH * editorCharWidth(ta)) / 2);
+  const px = Math.round(pad) + 'px';
+  if (ta.style.paddingLeft === px) return false;
+  ta.style.paddingLeft = ta.style.paddingRight = px;
+  return true;
+}
+
+// Re-measure and redraw everything anchored into the source. Called when the
+// pane's width or the type size changes — both move where the text wraps, which
+// moves every mark drawn over it.
+function relayoutEditor() {
+  const moved = applyEditorMeasure();
+  invalidateAnchorTops();
+  if (!moved) return;
+  for (const mod of ['Comments', 'Suggestions', 'Blame']) {
+    try { if (window[mod] && window[mod].redraw) window[mod].redraw(); } catch { /* optional */ }
+  }
+  try { repositionFindHighlight(); } catch { /* no active find */ }
+}
+
 function setMode(mode) {
   if (mode !== 'view' && mode !== 'split' && mode !== 'source') mode = 'view';
   const sameMode = mode === state.mode;
@@ -845,6 +920,9 @@ function setMode(mode) {
   const c = $('content');
   c.classList.remove('mode-view', 'mode-source', 'mode-split');
   c.classList.add('mode-' + mode);
+  // The pane just changed width, so the source column has to be re-measured
+  // before anything reads a position out of it.
+  relayoutEditor();
   // The two buttons are independent pane toggles, so both are lit in split.
   for (const btn of document.querySelectorAll('.mode-switch button')) {
     const pane = btn.dataset.pane;
@@ -2845,14 +2923,25 @@ function textareaCaretCoords(ta, index) {
   // A non-empty span so it has a layout box even at end-of-text / end-of-line.
   span.textContent = ta.value.slice(index) || '.';
   div.appendChild(span);
-  // Read the geometry out BEFORE converting it: scaleMirrorTop may measure on
-  // its own, and anything it does must not be able to reach a span we are still
-  // reading. Its own mirror slot guarantees that now; taking the readings first
-  // means this does not quietly depend on that.
-  const offTop = span.offsetTop, left = span.offsetLeft, offH = span.offsetHeight;
+  // BORDER-BOX RELATIVE, exactly as textareaRangeRects reports — the two are
+  // documented as matching and did not. offsetTop and offsetLeft are measured
+  // from the offsetParent's PADDING box, so they leave the padding out, while
+  // the rect-based path includes it. The gap was the padding itself: invisible
+  // at 1.5rem, and glaring once the source pane centres its column with a
+  // padding of several hundred px. It also fed scaleMirrorTop a top that had
+  // never included the padding it assumes is there.
+  //
+  // Read the geometry out BEFORE converting it: scaleMirrorTop measures on its
+  // own, and must not be able to reach a span still being read.
+  const mr = div.getBoundingClientRect();
+  const rects = span.getClientRects();
+  const first = rects.length ? rects[0] : span.getBoundingClientRect();
+  const rawTop = first.top - mr.top;
+  const left = first.left - mr.left;
+  const boxH = first.height;
   div.textContent = '';
-  const top = scaleMirrorTop(ta, offTop);
-  const height = parseFloat(cs.lineHeight) || offH;
+  const top = scaleMirrorTop(ta, rawTop);
+  const height = parseFloat(cs.lineHeight) || boxH;
   return { top, left, height };
 }
 
@@ -4590,6 +4679,17 @@ function showOverflowMenu(ev) {
 if (typeof ResizeObserver === 'function') {
   const bar = document.querySelector('.topbar');
   if (bar) new ResizeObserver(() => layoutTopbar()).observe(bar);
+
+  // The edit pane's width changes for more reasons than a window resize — the
+  // sidebar collapsing, the panes toggling, the first layout at boot. Watching
+  // the pane catches all of them. Padding sits INSIDE the pane, so setting it
+  // cannot resize what is being observed.
+  const pane = document.querySelector('.pane-edit');
+  if (pane) {
+    new ResizeObserver(() => {
+      try { relayoutEditor(); } catch { /* before the app has state */ }
+    }).observe(pane);
+  }
 } else {
   window.addEventListener('resize', layoutTopbar);
 }
@@ -4747,8 +4847,10 @@ function wire() {
   });
   // A resize changes the pane width, so every measured position is stale.
   window.addEventListener('resize', () => {
-    invalidateAnchorTops();
+    relayoutEditor();
     if (window.Comments) window.Comments.redraw();
+    if (window.Suggestions) window.Suggestions.redraw();
+    if (window.Blame) window.Blame.redraw();
   });
 
   ta.addEventListener('scroll', () => {

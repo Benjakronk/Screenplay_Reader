@@ -424,23 +424,20 @@ body.typewriter .pane { padding-top: 40vh; padding-bottom: 40vh; }
 }
 
 /* With the preview hidden the edit pane takes the whole window, and the source
-   ran the full width of a wide screen — an unreadable measure.
+   would run the full width of a wide screen — an unreadable measure. The text
+   is held to a column instead.
 
-   PADDING, NOT `max-width` WITH AUTO MARGINS. The textarea has to keep filling
-   the pane. Every mark drawn over the source — find highlights, comment and
-   suggestion boxes, the faux caret, the scroll-sync anchors — is measured in a
-   mirror div and positioned inside .pane-edit on the assumption that the
-   textarea starts at the pane's top-left. Centring the textarea would shift it
-   away from that origin and displace every one of them. Padding moves the text
-   without moving the box, and configTaMirror already copies the padding, so the
-   measurements follow on their own.
+   THE PADDING THAT DOES IT IS SET FROM JAVASCRIPT, in px, by
+   applyEditorMeasure() in app.js — not here. Centring in CSS needs a percentage
+   inside max()/calc(), and what getComputedStyle reports for such a padding is
+   not dependably a pixel value. The mirror that measures text geometry copies
+   the textarea's padding as a STRING into an element in a different containing
+   block, so a percentage surviving into it resolves against the wrong element
+   and every mark drawn over the source lands at the wrong x. See app.js.
 
-   The measure is in ch, so it stays 80 characters at any zoom. max() means this
-   only ever ADDS space: on a pane narrower than about 80 characters it falls
-   back to the same 1.5rem as everywhere else. */
-#content.mode-source .editor {
-  padding-inline: max(1.5rem, calc((100% - 80ch) / 2));
-}
+   PADDING RATHER THAN max-width WITH AUTO MARGINS, either way: the textarea has
+   to keep filling the pane, because those same marks are positioned inside
+   .pane-edit on the assumption that it starts at the pane's top-left. */
 
 .status {
   display: flex; justify-content: space-between;
