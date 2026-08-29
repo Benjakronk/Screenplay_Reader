@@ -125,6 +125,40 @@ console.log('\nconsecutive typing');
   });
 }
 
+// --------------------------------------------------- typing next to a deletion
+console.log('\ncorrecting yourself while suggesting');
+{
+  const { t, S } = fresh('Rolige avventende skritt.');
+  const id = S._recordDelete(7, 18);          // propose removing "avventende "
+  test('text typed where a deletion ends is NOT swallowed by it', () => {
+    // Typing over a selection marks the old text and inserts the new right at
+    // the deletion's end. The replacement must stay out of the removal.
+    t.insert(18, 'rolige ');
+    const s = S.list()[0];
+    eq(s.id, id);
+    eq(s.text, 'avventende ', 'the mark must still cover only what was replaced');
+  });
+  test('accepting removes only the proposed span', () => {
+    S.accept(id);
+    eq(t.toString(), 'Rolige rolige skritt.');
+  });
+}
+{
+  const { t, S } = fresh('Rolige avventende skritt.');
+  test('repeated backspaces grow one mark instead of a trail of them', () => {
+    // Backspace walking left through "skritt", one character at a time.
+    S._recordDelete(23, 24);
+    S._recordDelete(22, 23);
+    S._recordDelete(21, 22);
+    eq(S.list().length, 1, 'three keystrokes must read as one proposed removal');
+    eq(S.list()[0].text, 'itt');
+  });
+  test('the merged mark accepts as a single span', () => {
+    S.accept(S.list()[0].id);
+    eq(t.toString(), 'Rolige avventende skr.');
+  });
+}
+
 // ------------------------------------------------------------------- anchoring
 console.log('\nanchoring and orphans');
 {

@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node test-binding.mjs && node test-comments.mjs && node test-suggestions.mjs",
+    "test": "node test-binding.mjs && node test-twoclient.mjs && node test-comments.mjs && node test-suggestions.mjs",
+    "test:twoclient": "node test-twoclient.mjs",
     "test:comments": "node test-comments.mjs",
     "test:suggestions": "node test-suggestions.mjs"
   },

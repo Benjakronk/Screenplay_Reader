@@ -1032,15 +1032,17 @@ body.cloud-mode .editor[readonly] { background: var(--sidebar); cursor: default;
    cannot style its own glyphs, so the mark sits behind the text. */
 
 #comment-hl { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+/* Click-through, deliberately. The overlay sits ON TOP of the textarea, so a
+   box that accepts clicks eats them: clicking commented text would select the
+   whole comment range instead of placing the caret, making that stretch of
+   script look unwritable. The sidebar panel is how a thread is opened. */
 .comment-hl-box {
   position: absolute;
   background: rgba(255, 196, 0, 0.28);
   border-bottom: 2px solid rgba(212, 150, 0, 0.75);
   border-radius: 2px;
-  pointer-events: auto;
-  cursor: pointer;
+  pointer-events: none;
 }
-.comment-hl-box:hover { background: rgba(255, 196, 0, 0.45); }
 body.theme-dark .comment-hl-box,
 body.theme-night .comment-hl-box { background: rgba(255, 210, 80, 0.22); }
 

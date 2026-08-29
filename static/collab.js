@@ -90,10 +90,52 @@ window.Collab = (function () {
     fireDocChange();
   }
 
+  // ---------- line endings ----------
+
+  // LF IS THE ONLY VALID LINE ENDING IN THE SHARED TEXT, and this is not a
+  // style preference — it is forced by the editor. A <textarea> normalises its
+  // value per the HTML spec: CRLF and lone CR both become LF, on assignment and
+  // through setRangeText. So a CRDT holding CRLF describes a document the
+  // editor can never reproduce.
+  //
+  // The damage is not cosmetic. Every offset that crosses between the two —
+  // a typed edit, a comment anchor, a suggestion range — is then wrong by the
+  // number of line breaks above it, and an edit lands silently in the wrong
+  // place. A script imported from a Windows .fountain file had 1430 CRLF pairs
+  // and could not be edited at all, while a document created in the app was
+  // fine, which is exactly how the bug presented.
+  //
+  // Any client may do this: two of them deleting the same CR delete the same
+  // CRDT item, which merges to one deletion rather than two. The origin is its
+  // own, so it is neither mistaken for a local edit nor captured by undo —
+  // Ctrl+Z must not put the CRs back.
+  const NORMALIZE_ORIGIN = 'normalize-newlines';
+  let normalizing = false;
+
+  function normalizeNewlines() {
+    if (normalizing || !ytext || !ydoc || readOnly) return;
+    const s = ytext.toString();
+    if (s.indexOf('\r') === -1) return;
+    normalizing = true;
+    try {
+      ydoc.transact(() => {
+        // Backwards, so indices ahead of the cursor stay valid as we delete.
+        for (let i = s.length - 1; i >= 0; i--) {
+          if (s[i] !== '\r') continue;
+          ytext.delete(i, 1);
+          if (s[i + 1] !== '\n') ytext.insert(i, '\n');   // lone CR was a break
+        }
+      }, NORMALIZE_ORIGIN);
+    } finally {
+      normalizing = false;
+    }
+  }
+
   // ---------- remote -> local ----------
 
   function applyRemote() {
     if (!ytext || !ta) return;
+    normalizeNewlines();
     const next = ytext.toString();
     const d = diffRange(ta.value, next);
     if (!d) { lastText = next; return; }

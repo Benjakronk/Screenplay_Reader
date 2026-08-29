@@ -33,15 +33,30 @@ function textOf(doc) {
   return doc.getText(Y_TEXT_FIELD).toString();
 }
 
+// LF is the only line ending the shared text may hold. The editor is a
+// <textarea>, whose value the HTML spec normalises: CR and CRLF both become LF.
+// A CRDT seeded with CRLF therefore describes a document the browser cannot
+// reproduce, and every offset crossing between the two – a typed edit, a
+// comment anchor, a suggestion range – comes out wrong by the number of line
+// breaks above it, landing edits silently in the wrong place.
+//
+// A .fountain or .fdx file written on Windows arrives with CRLF, so this is the
+// gate that keeps it out. See the matching guard in static/collab.js, which
+// heals documents seeded before this existed.
+function normalizeNewlines(text) {
+  return String(text).replace(/\r\n?/g, '\n');
+}
+
 // Replaces the whole shared text in one transaction. Used for operations that
 // are genuinely a wholesale replacement – restore from history, .fdx import,
 // seeding a new document – never for ordinary edits, which come from the
 // browser as incremental CRDT updates.
 function replaceText(doc, text) {
   const ytext = doc.getText(Y_TEXT_FIELD);
+  const clean = text ? normalizeNewlines(text) : '';
   doc.transact(() => {
     if (ytext.length) ytext.delete(0, ytext.length);
-    if (text) ytext.insert(0, String(text));
+    if (clean) ytext.insert(0, clean);
   });
 }
 
@@ -139,7 +154,7 @@ async function snapshotIfChanged(docId, currentContent, { force = false, authorI
 
 module.exports = {
   Y_TEXT_FIELD, SNAPSHOT_MAX_PER_DOC, SNAPSHOT_MIN_INTERVAL_MS,
-  docFromState, textOf, replaceText, initialState,
+  docFromState, textOf, replaceText, initialState, normalizeNewlines,
   loadState, storeState, storedText,
   stamp, listVersions, versionContent, snapshotIfChanged,
 };

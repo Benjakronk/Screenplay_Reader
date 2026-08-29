@@ -238,7 +238,6 @@ window.Comments = (function () {
         const box = document.createElement('div');
         box.className = 'comment-hl-box';
         box.dataset.id = c.id;
-        box.title = `${c.authorName}: ${c.replies[0] ? c.replies[0].text : ''}`;
         // Content coordinates - the scroll offset lives on the host.
         //
         // getClientRects returns the GLYPH box, which sits inside the taller
@@ -249,7 +248,6 @@ window.Comments = (function () {
         box.style.left = r.left + 'px';
         box.style.width = r.width + 'px';
         box.style.height = (lh || r.height) + 'px';
-        box.onclick = () => focusComment(c.id);
         host.appendChild(box);
       }
     }

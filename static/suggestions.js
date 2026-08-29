@@ -41,10 +41,32 @@ window.Suggestions = (function () {
 
   // ---------- model ----------
 
-  function encodePos(index) {
+  // WHICH WAY A RANGE END LEANS. A Yjs relative position binds to a character,
+  // and `assoc` picks which side. With assoc 0 it binds to the character AFTER
+  // the index, so text inserted exactly there lands inside the range; with
+  // assoc -1 it binds to the character before, and inserted text lands outside.
+  //
+  // The two kinds of suggestion need opposite answers, and getting this wrong
+  // is not cosmetic:
+  //
+  //   insert  greedy at both ends  - typing on continues one proposal instead
+  //                                  of starting a new one per keystroke.
+  //   delete  greedy at neither    - typing a replacement next to a deletion
+  //                                  must NOT quietly mark the replacement for
+  //                                  deletion too.
+  //
+  // The delete case was live: typing over a selection marked the replaced text
+  // AND the text typed in its place, so accepting removed something nobody had
+  // asked to remove.
+  const ASSOC = {
+    insert: { from: -1, to: 0 },
+    delete: { from: 0, to: -1 },
+  };
+
+  function encodePos(index, assoc = 0) {
     const Y = C().Y;
     return Y.encodeRelativePosition(
-      Y.createRelativePositionFromTypeIndex(C().ytext, index));
+      Y.createRelativePositionFromTypeIndex(C().ytext, index, assoc));
   }
   function decodePos(bytes) {
     const Y = C().Y;
@@ -96,12 +118,13 @@ window.Suggestions = (function () {
     const Y = C().Y, doc = C().ydoc, t = C().ytext;
     const id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     const m = new Y.Map();
+    const lean = ASSOC[kind] || ASSOC.delete;
     doc.transact(() => {
       arr().push([m]);           // attach before populating, as in comments.js
       m.set('id', id);
       m.set('kind', kind);
-      m.set('from', encodePos(from));
-      m.set('to', encodePos(to));
+      m.set('from', encodePos(from, lean.from));
+      m.set('to', encodePos(to, lean.to));
       m.set('text', t.toString().slice(from, to));
       m.set('authorId', (me() && me().id) || '');
       m.set('authorName', who());
@@ -119,15 +142,58 @@ window.Suggestions = (function () {
   // existing one has already swallowed.
   function recordInsert(from, to) {
     if (!live() || readOnly() || to <= from) return null;
-    const myId = (me() && me().id) || '';
-    const covering = list().find((s) =>
-      s.kind === 'insert' && !s.orphaned && s.authorId === myId &&
-      s.from <= from && s.to >= to);
-    if (covering) return covering.id;      // already tracked by the extended range
+    const already = covering('insert', from, to);
+    if (already) return already.id;        // tracked by the extended range
     return record('insert', from, to);
   }
 
-  function recordDelete(from, to) { return record('delete', from, to); }
+  const myId = () => (me() && me().id) || '';
+
+  // My own open suggestion of `kind` that already covers [from, to), if any.
+  function covering(kind, from, to) {
+    return list().find((s) =>
+      s.kind === kind && !s.orphaned && s.authorId === myId() &&
+      s.from <= from && s.to >= to) || null;
+  }
+
+  // Moves an existing range rather than adding a second one beside it.
+  function extend(id, from, to) {
+    const m = findMap(id);
+    if (!m) return id;
+    const lean = ASSOC[m.get('kind')] || ASSOC.delete;
+    C().ydoc.transact(() => {
+      m.set('from', encodePos(from, lean.from));
+      m.set('to', encodePos(to, lean.to));
+      m.set('text', C().ytext.toString().slice(from, to));
+    });
+    return id;
+  }
+
+  // Holding Backspace should grow ONE mark, not leave a trail of
+  // single-character ones for the reviewer to accept individually.
+  function recordDelete(from, to) {
+    if (!live() || readOnly() || to <= from) return null;
+    const touching = list().find((s) =>
+      s.kind === 'delete' && !s.orphaned && s.authorId === myId() &&
+      s.from <= to && s.to >= from);
+    if (touching) {
+      return extend(touching.id, Math.min(touching.from, from), Math.max(touching.to, to));
+    }
+    return record('delete', from, to);
+  }
+
+  // Backspacing away something you typed a moment ago should remove the
+  // proposal, not leave an empty one behind: with no text left there is nothing
+  // to accept or reject. Only the author prunes their own, so two clients never
+  // race to delete the same entry by index.
+  function pruneMyEmptyInserts() {
+    if (!live() || readOnly()) return;
+    for (const s of list()) {
+      if (s.kind !== 'insert' || !s.orphaned || s.authorId !== myId()) continue;
+      const at = findIndex(s.id);
+      if (at >= 0) C().ydoc.transact(() => arr().delete(at, 1));
+    }
+  }
 
   // Resolving is only ever "keep the text" or "remove the text".
   function resolve(id, keepText) {
@@ -178,8 +244,9 @@ window.Suggestions = (function () {
   // suggest mode an insertion becomes a proposal; a deletion should never reach
   // here, because beforeinput cancels it first.
   function onLocalEdit(d) {
-    if (!suggesting || !d || !d.inserted) return;
-    recordInsert(d.from, d.from + d.inserted.length);
+    if (!suggesting || !d) return;
+    if (d.inserted) recordInsert(d.from, d.from + d.inserted.length);
+    if (d.removed) pruneMyEmptyInserts();
   }
 
   // Deleting must not remove anything: the text stays and is marked instead.
@@ -204,6 +271,13 @@ window.Suggestions = (function () {
       else return;                            // some other deletion we do not model
     }
     if (to <= from) { ev.preventDefault(); return; }
+
+    // Correcting a typo in what you are proposing right now is not a deletion
+    // to track: that text is not in the document under review, so there is
+    // nothing for anyone to reject. Let the browser really delete it and the
+    // insert suggestion shrinks with it. Without this, fixing a mistype left a
+    // removal mark sitting on top of your own pending addition.
+    if (covering('insert', from, to)) return;
 
     ev.preventDefault();
     recordDelete(from, to);
