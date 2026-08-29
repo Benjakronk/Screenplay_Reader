@@ -495,10 +495,13 @@ function renderBlock(b, counters) {
   el.className = 'elem elem-' + b.kind;
   if (b.indentIn) el.style.marginLeft = (b.indentIn * Pagination.CHARS_PER_INCH).toFixed(2) + 'ch';
   if (b.align && b.align !== 'left') el.style.textAlign = b.align;
-  // Color-code character cues.
-  if (b.kind === 'character' && b.lines.length) {
-    el.style.color = colorForCharacter(b.lines[0]);
-    el.dataset.cue = b.lines[0];
+  // Color-code character cues. The (CONT'D) line a page break inserts is the
+  // same person still speaking, so it takes the same colour.
+  if ((b.kind === 'character' || b.kind === 'contd') && b.lines.length) {
+    const who = b.cue || b.lines[0];
+    el.style.color = colorForCharacter(who);
+    // data-cue is the identity everywhere, so a cue and its dialogue match.
+    el.dataset.cue = Pagination.characterKey(who);
   }
   if ((b.kind === 'dialogue' || b.kind === 'parenthetical') && b.cue) {
     el.dataset.cue = b.cue;
@@ -663,9 +666,13 @@ function renderSceneNav() {
   };
 }
 
+// Hashed from the character's IDENTITY, not from the cue line as typed.
+// Hashing the line gave "SARA" and "SARA (CONT'D)" two different hues, so the
+// same person changed colour every time the dialogue carried over.
 function colorForCharacter(name) {
+  const key = Pagination.characterKey(name);
   let h = 0;
-  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
   const hue = Math.abs(h) % 360;
   return `hsl(${hue}, 55%, 45%)`;
 }
@@ -680,15 +687,17 @@ function countWords(s) {
 
 function collectCharacters(tokens) {
   const seen = new Map();
-  const ensure = (name) => {
-    if (!seen.has(name)) seen.set(name, { name, count: 0, words: 0 });
-    return seen.get(name);
+  // Keyed on identity so "SARA", "SARA (CONT'D)" and "SARA (V.O.)" are one
+  // entry with one colour, rather than three. The name shown is the key, so
+  // the list agrees with the cue colours in the preview.
+  const ensure = (key) => {
+    if (!seen.has(key)) seen.set(key, { name: key, count: 0, words: 0 });
+    return seen.get(key);
   };
   let current = null;
   for (const t of tokens) {
     if (t.type === 'character') {
-      const name = t.text.replace(/\s*\([^)]*\)\s*$/, '').trim();
-      current = ensure(name);
+      current = ensure(Pagination.characterKey(t.text));
       current.count += 1;
     } else if (t.type === 'dialogue' && current) {
       current.words += countWords(t.text);
@@ -1770,7 +1779,7 @@ function computeStats() {
       locs.set(loc, (locs.get(loc) || 0) + 1);
     }
     if (t.type === 'character') {
-      currentChar = t.text.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      currentChar = Pagination.characterKey(t.text);
       const c = ensureChar(currentChar);
       c.cues++;
       if (currentScene) c.scenes.add(currentScene);
@@ -3065,9 +3074,14 @@ function buildPaletteItems() {
     let n = 0;
     for (const t of state.tokens) {
       if (t.type === 'character') {
-        const name = (t.text || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
-        if (!name || seen.has(name)) continue;
-        seen.add(name);
+        // Dedupe on identity so a character listed once, however their cues
+        // are modified — but search for the name AS WRITTEN, since indexOf
+        // below looks it up in the source, where a forced @Sara is not
+        // uppercase.
+        const key = Pagination.characterKey(t.text);
+        const name = (t.text || '').replace(/(?:\s*\([^)]*\))+\s*$/, '').trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
         // Find the nth scene we're in so we can scroll. Simpler: just find
         // the first .elem-character whose textContent matches.
         items.push({
@@ -4244,7 +4258,8 @@ function buildTtsQueue() {
     if (t.type === 'scene') {
       items.push({ text, voice: null, label: 'Scene' });
     } else if (t.type === 'character') {
-      curChar = text.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      // Identity, so a character keeps one voice across (CONT'D) and (V.O.).
+      curChar = Pagination.characterKey(text);
     } else if (t.type === 'dialogue') {
       items.push({ text, voice: curChar ? voiceForCharacter(curChar) : null, label: curChar });
     } else if (t.type === 'action') {
@@ -4306,9 +4321,12 @@ function endRehearsal() {
 }
 const REHEARSE_PLACEHOLDER = '<span class="rehearse-placeholder">···  (click to reveal)</span>';
 function applyRehearsalMask() {
-  const focal = (state.rehearsalChar || '').toUpperCase().trim();
+  // Both sides through the same normaliser, or a line headed "SARA (CONT'D)"
+  // would not match the character you are rehearsing and your own dialogue
+  // would be masked back at you.
+  const focal = Pagination.characterKey(state.rehearsalChar);
   for (const el of document.querySelectorAll('.elem-dialogue, .elem-parenthetical')) {
-    const cue = (el.dataset.cue || '').toUpperCase().trim();
+    const cue = Pagination.characterKey(el.dataset.cue);
     if (cue && cue !== focal) {
       if (!el.dataset.originalHtml) el.dataset.originalHtml = el.innerHTML;
       el.dataset.revealed = '';

@@ -97,6 +97,24 @@
     return out;
   }
 
+  // WHO IS SPEAKING, as opposed to what the cue line says.
+  //
+  // "SARA", "SARA (CONT'D)" and "SARA (V.O.)" are one character written three
+  // ways. The cue line prints as the writer typed it, but everything that asks
+  // *which character is this* — the colour coding, the character list,
+  // rehearsal mode, the (MORE)/(CONT'D) carried across a page break — has to
+  // agree, or the same person gets two colours and rehearsal masks their own
+  // lines. Chained modifiers ("SARA (V.O.) (CONT'D)") fold too.
+  //
+  // Kept in lockstep with character_key() in pagination.py.
+  function characterKey(cue) {
+    return String(cue || '')
+      .replace(/\n/g, ' ')
+      .replace(/(?:\s*\([^)]*\))+\s*$/, '')   // (CONT'D), (V.O.), (O.S.), chained
+      .trim()
+      .toUpperCase();
+  }
+
   // ----- token → blocks -----
   function tokensToBlocks(tokens, rules) {
     const blocks = [];
@@ -117,8 +135,11 @@
         case 'character': {
           const name = text.replace(/\n/g, ' ').trim();
           return {
+            // lines is what PRINTS (the writer's own cue, modifiers and all);
+            // cue is WHO IT IS, which is what everything else matches on.
             kind: 'character', lines: [name.toUpperCase()],
-            indentIn: rules.characterIndent - rules.left, align: 'left', cue: name.toUpperCase(),
+            indentIn: rules.characterIndent - rules.left, align: 'left',
+            cue: characterKey(name),
             splittable: false,
           };
         }
@@ -180,7 +201,7 @@
         return;
       }
       if (t === 'character') {
-        lastCharacter = (tok.text || '').toUpperCase();
+        lastCharacter = characterKey(tok.text);
         if (dualBuf && tok.dual) dualBuf.side = 'right';
       }
       const b = makeBlock(tok, lastCharacter);
@@ -320,7 +341,8 @@
     return { rules, titlePage: tp, pages };
   }
 
-  const api = { paginateScript, tokensToBlocks, paginate, RULES, wrapLines, CHARS_PER_INCH, LINES_PER_INCH };
+  const api = { paginateScript, tokensToBlocks, paginate, RULES, wrapLines, characterKey,
+                CHARS_PER_INCH, LINES_PER_INCH };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Pagination = api;
 })(typeof window !== 'undefined' ? window : globalThis);

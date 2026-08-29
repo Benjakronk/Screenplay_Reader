@@ -11,6 +11,7 @@ same `Page` list so they paginate identically.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -108,6 +109,23 @@ class Block:
     tokIdx: int | None = None
 
 
+_CUE_MODIFIERS_RE = re.compile(r"(?:\s*\([^)]*\))+\s*$")
+
+
+def character_key(cue: str | None) -> str:
+    """Who is speaking, as opposed to what the cue line says.
+
+    "SARA", "SARA (CONT'D)" and "SARA (V.O.)" are one character written three
+    ways. The cue line prints as the writer typed it, but everything that asks
+    *which character is this* — the colour coding, the character list, the
+    (MORE)/(CONT'D) carried across a page break — has to agree. Chained
+    modifiers ("SARA (V.O.) (CONT'D)") fold too.
+
+    Kept in lockstep with characterKey() in static/pagination.js.
+    """
+    return _CUE_MODIFIERS_RE.sub("", str(cue or "").replace("\n", " ")).strip().upper()
+
+
 def tokens_to_blocks(tokens: list[dict], rules: FormatRules) -> list[Block]:
     blocks: list[Block] = []
     dual_buf: dict | None = None
@@ -126,9 +144,11 @@ def tokens_to_blocks(tokens: list[dict], rules: FormatRules) -> list[Block]:
                          indentIn=0)
         if t == "character":
             name = text.replace("\n", " ").strip()
+            # lines is what PRINTS (the writer's own cue, modifiers and all);
+            # cue is WHO IT IS, which is what everything else matches on.
             return Block(kind="character", lines=[name.upper()],
                          indentIn=rules.characterIndent - rules.left,
-                         cue=name.upper(), splittable=False)
+                         cue=character_key(name), splittable=False)
         if t == "parenthetical":
             return Block(kind="parenthetical",
                          lines=wrap_lines(text, width_chars(rules.dialogueWidth + 0.5)),
@@ -178,7 +198,7 @@ def tokens_to_blocks(tokens: list[dict], rules: FormatRules) -> list[Block]:
             dual_buf = None
             continue
         if t == "character":
-            last_character = (tok.get("text") or "").upper()
+            last_character = character_key(tok.get("text"))
             if dual_buf and tok.get("dual"):
                 dual_buf["side"] = "right"
         b = make_block(tok, last_character)
