@@ -252,7 +252,12 @@ def build_pdf(text: str) -> bytes:
                 gap = pagination.space_before(b, False) * line_h_in
                 y_in -= gap
 
-            if b.kind == "scene":
+            # Numbers in both margins are a shooting-script convention, so they
+            # follow the same rule as slug lines: formats that organise by
+            # `#` sections (stage, radio) name their scenes in the heading and
+            # get no margin numbers. Matches the CSS for .format-stage /
+            # .format-radio, so print and screen agree.
+            if b.kind == "scene" and rules.sceneHeadings == "all":
                 scene_counter += 1
                 num = str(scene_counter)
                 c.setFont(FONT_REGULAR, FONT_SIZE)

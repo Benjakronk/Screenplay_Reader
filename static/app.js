@@ -3671,7 +3671,11 @@ const HELP_HOWTO_HTML = `
   <ol>
     <li>Click the title page (the cover) to open the title-page editor.
         Fill in title, author, format, draft date, etc. — pick screenplay,
-        stage, or radio to drive the layout.</li>
+        stage, or radio to drive the layout.
+        <br><em>Stage and radio organise by <code>#</code> sections rather than
+        <code>INT./EXT.</code> slug lines, so slugs are left out of the rendered
+        script and its PDF. A heading you force with a leading dot
+        (<code>.The kitchen, later</code>) is always kept, in every format.</em></li>
     <li>Start the first scene: type <code>INT. KITCHEN - DAY</code> on a fresh
         line. Lowercase prefixes auto-uppercase when you press Enter.</li>
     <li>Press Enter to drop into action. Type a paragraph.</li>

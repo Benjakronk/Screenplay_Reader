@@ -179,10 +179,15 @@
       }
 
       // Forced scene heading: leading `.` (but not `..` which is action).
+      //
+      // `forced` is recorded because the two kinds are not interchangeable
+      // downstream: stage and radio scripts organise by `#` sections and drop
+      // screenplay INT./EXT. slugs, but a heading the writer forced with a dot
+      // is an explicit instruction and is always kept.
       const fscM = FORCED_SCENE_RE.exec(line);
       if (fscM) {
         closeDual();
-        push({ type: 'scene', text: fscM[1] });
+        push({ type: 'scene', text: fscM[1], forced: true });
         continue;
       }
 

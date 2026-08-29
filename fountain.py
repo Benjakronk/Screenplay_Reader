@@ -149,7 +149,11 @@ def _classify(lines: list[str], body_start: int) -> list[dict]:
 
         m = FORCED_SCENE_RE.match(line)
         if m:
-            close_dual(); push({"type": "scene", "text": m.group(1)}); i += 1; continue
+            # `forced` is recorded because the two kinds are not interchangeable
+            # downstream: stage and radio scripts organise by `#` sections and
+            # drop screenplay INT./EXT. slugs, but a heading the writer forced
+            # with a dot is an explicit instruction and is always kept.
+            close_dual(); push({"type": "scene", "text": m.group(1), "forced": True}); i += 1; continue
 
         if SCENE_PREFIX.match(line) and _is_blank(prev) and _is_blank(nxt):
             close_dual(); push({"type": "scene", "text": line}); i += 1; continue

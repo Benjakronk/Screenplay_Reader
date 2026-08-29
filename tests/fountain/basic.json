@@ -23,7 +23,7 @@
     "name": "forced scene with leading dot",
     "input": ".BACK TO REALITY\n\nShe blinks.\n",
     "expected": [
-      {"type": "scene", "text": "BACK TO REALITY"},
+      {"type": "scene", "text": "BACK TO REALITY", "forced": true},
       {"type": "action", "text": "She blinks."}
     ]
   },

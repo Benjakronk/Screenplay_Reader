@@ -133,8 +133,97 @@ def run_character_key() -> int:
     return 0 if failed == 0 else 1
 
 
+# A script carrying both kinds of heading: one forced with a dot, one an
+# ordinary screenplay slug line.
+SCENE_SRC = "\n".join([
+    "Title: Prove", "Format: FORMAT", "",
+    ".The kitchen, later", "",
+    "SARA", "Hallo?", "",
+    "INT. KITCHEN - DAY", "",
+    "More action.", "",
+])
+
+# Screenplay keeps both. Stage and radio organise by `#` sections, so they drop
+# slug lines — but a heading the writer forced with a dot is an explicit
+# instruction and survives in every format.
+SCENE_EXPECTED = {
+    "screenplay": ["THE KITCHEN, LATER", "INT. KITCHEN - DAY"],
+    "stage": ["THE KITCHEN, LATER"],
+    "radio": ["THE KITCHEN, LATER"],
+}
+
+
+def _scene_headings_py(fmt: str) -> list[str]:
+    import fountain as _f  # noqa: PLC0415
+    import pagination as _p  # noqa: PLC0415
+
+    out = _p.paginate_script(_f.parse(SCENE_SRC.replace("FORMAT", fmt)))
+    return [b.lines[0] for page in out["pages"] for b in page["blocks"]
+            if b.kind == "scene"]
+
+
+def run_scene_headings() -> int:
+    """Which scene headings survive in each format, and JS/Python agreement.
+
+    The heading is DROPPED in the paginator rather than hidden in CSS, so that
+    the screen, the PDF and the page-break logic cannot disagree — which they
+    previously did, in all three directions at once.
+    """
+    passed = failed = 0
+    for fmt, want in SCENE_EXPECTED.items():
+        got = _scene_headings_py(fmt)
+        if got == want:
+            passed += 1
+            print(f"  PASS {fmt} keeps {got}")
+        else:
+            failed += 1
+            print(f"  FAIL {fmt} kept {got}, expected {want}")
+
+    import json as _json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        print("  SKIP javascript parity (node not on PATH)")
+        print(f"{passed} passed, {failed} failed")
+        return 0 if failed == 0 else 1
+
+    script = (
+        "const F=require(process.argv[1]),P=require(process.argv[2]);"
+        "const src=process.argv[3],fmts=JSON.parse(process.argv[4]);const out={};"
+        "for(const f of fmts){const o=P.paginateScript(F.parse(src.replace('FORMAT',f)));"
+        "out[f]=o.pages.flatMap(p=>p.blocks).filter(b=>b.kind==='scene').map(b=>b.lines[0]);}"
+        "console.log(JSON.stringify(out));"
+    )
+    res = subprocess.run(
+        [node, "-e", script,
+         str(ROOT / "static" / "fountain.js"), str(ROOT / "static" / "pagination.js"),
+         SCENE_SRC, _json.dumps(list(SCENE_EXPECTED))],
+        capture_output=True, text=True, encoding="utf-8", cwd=str(ROOT))
+    if res.returncode != 0:
+        failed += 1
+        print(f"  FAIL javascript port did not run: {res.stderr.strip()[:200]}")
+    else:
+        js = _json.loads(res.stdout)
+        py = {f: _scene_headings_py(f) for f in SCENE_EXPECTED}
+        if js == py:
+            passed += 1
+            print(f"  PASS javascript port agrees for {', '.join(SCENE_EXPECTED)}")
+        else:
+            failed += 1
+            print(f"  FAIL python {py} vs javascript {js}")
+
+    print(f"{passed} passed, {failed} failed")
+    return 0 if failed == 0 else 1
+
+
 if __name__ == "__main__":
     rc = run()
     print()
     print("character identity")
-    sys.exit(rc or run_character_key())
+    rc = run_character_key() or rc
+    print()
+    print("scene headings per format")
+    rc = run_scene_headings() or rc
+    sys.exit(rc)

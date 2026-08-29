@@ -558,13 +558,31 @@ body.typewriter .pane { padding-top: 40vh; padding-bottom: 40vh; }
 .format-stage .elem-character    { font-weight: 700; }
 .format-stage .elem-parenthetical { font-style: italic; max-width: none; }
 .format-stage .elem-dialogue     { max-width: 50ch; }
-.format-stage .elem-scene        { display: none; }
 .format-stage .elem-action       { font-style: italic; color: var(--muted); }
+/* Screenplay INT./EXT. slugs never reach the DOM in this format — pagination
+   drops them, so the PDF and the page breaks agree with what is on screen (see
+   keepsScene). What survives is a heading the writer forced with a dot, which
+   is an explicit instruction and is set as a stage scene heading. */
+.format-stage .elem-scene {
+  text-align: center; font-weight: 700; letter-spacing: 0.08em;
+  margin-bottom: 0.6em;
+}
+/* Numbers in both margins are a shooting-script convention; a stage or radio
+   script names its scenes in the heading instead. */
+.format-stage .elem-scene::before, .format-stage .elem-scene::after,
+.format-radio .elem-scene::before, .format-radio .elem-scene::after {
+  content: none;
+}
 .format-stage .elem-section {
   text-align: center; border-bottom: 2px solid var(--accent); font-size: 1.1em;
 }
 
-.format-radio .elem-scene { display: none; }
+/* As stage: only a dot-forced heading survives pagination, and it titles the
+   scene. */
+.format-radio .elem-scene {
+  text-align: center; font-weight: 700; letter-spacing: 0.08em;
+  margin-bottom: 0.6em;
+}
 .format-radio .elem-character { font-weight: 700; }
 .format-radio .elem-dialogue { max-width: 55ch; }
 .format-radio .elem-parenthetical { font-style: italic; }

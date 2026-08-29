@@ -48,6 +48,7 @@
     dialogueWidth: 4.6, actionWidth: 6.0,
     transitionAlign: 'left',
     paginate: 'scene',
+    sceneHeadings: 'forced',
   };
   const RADIO = {
     name: 'radio',
@@ -57,8 +58,27 @@
     dialogueWidth: 4.0, actionWidth: 6.0,
     transitionAlign: 'left',
     paginate: 'scene',
+    sceneHeadings: 'forced',
   };
   const RULES = { screenplay: SCREENPLAY, stage: STAGE, radio: RADIO };
+
+  // WHICH SCENE HEADINGS A FORMAT KEEPS.
+  //
+  // 'all' (screenplay) keeps every one. 'forced' (stage, radio) keeps only a
+  // heading the writer forced with a leading dot, and drops INT./EXT. slug
+  // lines, because a stage or radio script organises by `#` sections rather
+  // than screenplay slugs.
+  //
+  // DROPPED, NOT HIDDEN. Hiding it in CSS was the old approach and it went
+  // wrong three ways at once: the PDF renders from the same blocks and had no
+  // such rule, so it printed headings the screen did not; the paginator still
+  // counted the invisible lines; and stage/radio break the page before every
+  // scene, so an unseen heading forced an unexplained page break and left a gap
+  // above it. Deciding once, here, is the only way the screen, the PDF and the
+  // page breaks can agree.
+  function keepsScene(rules, tok) {
+    return rules.sceneHeadings !== 'forced' || !!tok.forced;
+  }
 
   // 12pt Courier ≈ 10 chars per inch, 6 lines per inch.
   const CHARS_PER_INCH = 10;
@@ -189,6 +209,7 @@
 
     tokens.forEach((tok, idx) => {
       const t = tok.type;
+      if (t === 'scene' && !keepsScene(rules, tok)) return;
       if (t === 'dual-dialogue-begin') {
         dualBuf = { left: [], right: [], side: 'left' };
         return;

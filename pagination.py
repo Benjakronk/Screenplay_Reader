@@ -32,6 +32,7 @@ class FormatRules:
     actionWidth: float = 6.0
     transitionAlign: str = "right"
     paginate: str = "lines"
+    sceneHeadings: str = "all"
 
 
 SCREENPLAY = FormatRules(name="screenplay")
@@ -42,6 +43,7 @@ STAGE = FormatRules(
     dialogueWidth=4.6,
     transitionAlign="left",
     paginate="scene",
+    sceneHeadings="forced",
 )
 RADIO = FormatRules(
     name="radio",
@@ -50,8 +52,31 @@ RADIO = FormatRules(
     dialogueWidth=4.0,
     transitionAlign="left",
     paginate="scene",
+    sceneHeadings="forced",
 )
 RULES = {"screenplay": SCREENPLAY, "stage": STAGE, "radio": RADIO}
+
+
+def keeps_scene(rules: FormatRules, tok: dict) -> bool:
+    """Which scene headings a format keeps.
+
+    "all" (screenplay) keeps every one. "forced" (stage, radio) keeps only a
+    heading the writer forced with a leading dot, and drops INT./EXT. slug
+    lines, because a stage or radio script organises by `#` sections rather than
+    screenplay slugs.
+
+    DROPPED, NOT HIDDEN. Hiding it in CSS was the old approach and it went wrong
+    three ways at once: the PDF renders from the same blocks and had no such
+    rule, so it printed headings the screen did not; the paginator still counted
+    the invisible lines; and stage/radio break the page before every scene, so
+    an unseen heading forced an unexplained page break and left a gap above it.
+    Deciding once, here, is the only way the screen, the PDF and the page breaks
+    can agree.
+
+    Kept in lockstep with keepsScene() in static/pagination.js.
+    """
+    return rules.sceneHeadings != "forced" or bool(tok.get("forced"))
+
 
 CHARS_PER_INCH = 10
 LINES_PER_INCH = 6
@@ -187,6 +212,8 @@ def tokens_to_blocks(tokens: list[dict], rules: FormatRules) -> list[Block]:
 
     for idx, tok in enumerate(tokens):
         t = tok.get("type")
+        if t == "scene" and not keeps_scene(rules, tok):
+            continue
         if t == "dual-dialogue-begin":
             dual_buf = {"left": [], "right": [], "side": "left"}
             continue
