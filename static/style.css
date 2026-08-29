@@ -658,15 +658,28 @@ body.typewriter .pane { padding-top: 40vh; padding-bottom: 40vh; }
 }
 
 /* ---------- beat board / cards ---------- */
-.modal-cards { width: min(1100px, 95vw); max-width: 1100px; min-width: 700px; max-height: 90vh; }
+
+/* The whole screen while it is open: the board is a view of the entire story,
+   and every column of it is a scene you are comparing against the others. */
+.modal-cards {
+  width: 100vw; height: 100vh;
+  min-width: 0; max-width: none; max-height: none;
+  border-radius: 0; border: none;
+}
+/* The body scrolls, the header stays put. min-height:0 is what actually lets a
+   flex child shrink below its content and scroll. */
+.modal-cards .modal-body { flex: 1 1 auto; min-height: 0; }
 .apply-btn {
   background: var(--accent); color: white; border: none; border-radius: 4px;
   padding: 0.35rem 0.9rem; font-size: 0.85rem; cursor: pointer; margin-right: 0.5rem;
 }
 .apply-btn:hover { filter: brightness(1.1); }
 .cards-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 0.75rem;
+  /* Rows size to their content and stack from the top; without this a short
+     board stretches its cards down the whole screen. */
+  align-content: start;
 }
 .card {
   background: var(--paper); border: 1px solid var(--rule);
@@ -690,7 +703,20 @@ body.typewriter .pane { padding-top: 40vh; padding-bottom: 40vh; }
   word-break: break-word;
 }
 .card-syn { font: italic 0.82rem var(--sans); color: var(--accent); margin-bottom: 0.4rem; }
-.card-prev { font: 0.78rem var(--courier); color: var(--muted); flex: 1; }
+
+/* The scene description, in full. The card holds its height and the text
+   scrolls inside it, so one long description cannot push a row of cards taller
+   than the rest and break the board into a ragged mess.
+   pre-wrap keeps the writer's own line breaks. */
+.card-prev {
+  font: 0.78rem var(--courier); color: var(--muted);
+  flex: 1 1 auto; min-height: 0; max-height: 18em;
+  overflow-y: auto; overscroll-behavior: contain;
+  white-space: pre-wrap; word-break: break-word;
+  /* Text selection is re-enabled here (the card suppresses it for dragging) so
+     a description can be copied out. */
+  user-select: text; cursor: text;
+}
 .card-num {
   position: absolute; top: 0.35rem; right: 0.5rem;
   font: 600 0.7rem var(--courier);
@@ -960,8 +986,10 @@ body.perform .screenplay {
   .crumbs { min-width: 3rem; }
   /* A modal that is 420px wide has nothing to sit in on a 360px screen. */
   .modal { min-width: 0; width: 96vw; max-width: 96vw; }
+  /* .modal-cards is deliberately absent: the beat board wants the whole screen
+     most of all on a small one. */
   .modal-wide, .modal-palette, .modal-diff, .modal-tp,
-  .modal-cards, .modal-review { min-width: 0; width: 96vw; max-width: 96vw; }
+  .modal-review { min-width: 0; width: 96vw; max-width: 96vw; }
 }
 
 /* ---------- print → PDF ----------

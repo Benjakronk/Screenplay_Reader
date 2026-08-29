@@ -2466,15 +2466,33 @@ function synopsisFor(chunk) {
   }
   return '';
 }
+// The first text section after the scene heading, WHOLE — which by convention
+// in this project is a short description of what happens in the scene, so the
+// board reads as a summary of the story rather than a list of opening lines.
+//
+// Returned complete rather than clipped: the card scrolls instead. Truncating
+// to 80 characters here would decide, on the writer's behalf, that the first
+// line is the interesting one.
+//
+// A "section" is the run of lines up to the first blank one. Leading blanks and
+// Fountain structure markers (synopsis, section, lyric, transition) are skipped
+// to find where it starts, so a scene opening with `= a synopsis` still shows
+// its action underneath.
 function previewFor(chunk) {
-  // First action paragraph after the heading (skip blank / synopsis / section).
-  for (const line of chunk.body.split('\n').slice(1)) {
+  const lines = chunk.body.split('\n').slice(1);
+  const out = [];
+  for (const line of lines) {
     const t = line.trim();
-    if (!t) continue;
-    if (/^[=#~>]/.test(t)) continue;
-    return t.length > 80 ? t.slice(0, 80) + '…' : t;
+    if (!out.length) {
+      if (!t) continue;                       // not there yet
+      if (/^[=#~>]/.test(t)) continue;        // structure, not the description
+      out.push(t);
+      continue;
+    }
+    if (!t) break;                            // end of the paragraph
+    out.push(t);
   }
-  return '';
+  return out.join('\n');
 }
 
 function openCards() {
@@ -2511,12 +2529,24 @@ function openCards() {
         ${synopsisFor(c) ? `<div class="card-syn">${escapeHtml(synopsisFor(c))}</div>` : ''}
         <div class="card-prev">${escapeHtml(previewFor(c))}</div>
         <div class="card-num">${i + 1}</div>`;
+      // The whole card is draggable, which would otherwise swallow any press
+      // inside the description: dragging its scrollbar, or selecting a line to
+      // copy, would start reordering the scene instead. Suspend dragging while
+      // the press is in there, and restore it afterwards. The wheel is
+      // unaffected either way.
+      const prev = card.querySelector('.card-prev');
+      if (prev) {
+        prev.addEventListener('mousedown', () => { card.draggable = false; });
+        prev.addEventListener('mouseup', () => { card.draggable = true; });
+        prev.addEventListener('mouseleave', () => { card.draggable = true; });
+      }
+
       card.addEventListener('dragstart', (ev) => {
         ev.dataTransfer.setData('text/plain', String(i));
         ev.dataTransfer.effectAllowed = 'move';
         card.classList.add('dragging');
       });
-      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+      card.addEventListener('dragend', () => { card.classList.remove('dragging'); card.draggable = true; });
       card.addEventListener('dragover', (ev) => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; card.classList.add('drop-target'); });
       card.addEventListener('dragleave', () => card.classList.remove('drop-target'));
       card.addEventListener('drop', (ev) => {
