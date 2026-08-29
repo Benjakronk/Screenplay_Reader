@@ -208,14 +208,24 @@ window.Comments = (function () {
       }
       div.appendChild(document.createTextNode(ta.value.slice(at)));
       const mr = div.getBoundingClientRect();
-      for (const [r, sp] of spans) {
-        out.set(r.key, Array.from(sp.getClientRects()).map((c) => ({
-          // Same sub-pixel calibration app.js applies - see scaleMirrorTop.
-          top: scaleMirrorTop(ta, c.top - mr.top),
-          left: c.left - mr.left, width: c.width, height: c.height,
+
+      // READ EVERY RECTANGLE FIRST, then convert. Interleaving the two means
+      // calling scaleMirrorTop while the spans are still being read, and
+      // anything that measures on its own - as the calibration does - can empty
+      // the mirror mid-walk and leave the remaining spans detached, silently
+      // yielding no rectangles. Reading first makes this loop depend on nothing
+      // but the DOM it just built.
+      const raw = spans.map(([r, sp]) => [r, Array.from(sp.getClientRects()).map((c) => ({
+        top: c.top - mr.top, left: c.left - mr.left, width: c.width, height: c.height,
+      }))]);
+      div.textContent = '';
+
+      for (const [r, rects] of raw) {
+        // Same sub-pixel calibration app.js applies - see scaleMirrorTop.
+        out.set(r.key, rects.map((c) => ({
+          top: scaleMirrorTop(ta, c.top), left: c.left, width: c.width, height: c.height,
         })));
       }
-      div.textContent = '';
     }
     for (const r of spill) out.set(r.key, textareaRangeRects(ta, r.from, r.to));
     return out;

@@ -2713,14 +2713,29 @@ function lineColToCharIdx(ta, line, col) {
 // visual rows are accounted for, unlike a flat `line * lineHeight` estimate
 // (which placed the caret/selection a few rows too high). Returned top/left are
 // relative to the textarea's border-box top-left, before scroll is applied.
-let _taCaretMirror = null;
+// Mirrors are kept PER SLOT, not as a single shared element.
+//
+// They are stateful scratch space: a caller fills one with text, reads the
+// geometry back, then empties it. Two measurements sharing one element are
+// therefore not independent — and they were not. mirrorScale() calibrates by
+// filling the mirror with the whole document, and it is called from
+// scaleMirrorTop() *while* batchRangeRects is walking its own spans in that
+// same element. The first call emptied the mirror out from under the walk, so
+// every span after the first was detached and returned no rectangles at all.
+//
+// The symptom was comment highlights that came and went: only the first comment
+// was ever drawn, unless the scale happened to be cached already (it is
+// invalidated on every render), in which case all of them were. Giving each
+// caller its own slot makes the measurements independent by construction.
+const _taMirrors = Object.create(null);
+
 // Configure (creating if needed) the hidden mirror div so it lays out text
 // identically to the textarea — same box metrics, wrapping, and glyph spacing.
-function configTaMirror(ta) {
+function configTaMirror(ta, slot = 'measure') {
   const cs = getComputedStyle(ta);
-  let div = _taCaretMirror;
+  let div = _taMirrors[slot];
   if (!div) {
-    div = _taCaretMirror = document.createElement('div');
+    div = _taMirrors[slot] = document.createElement('div');
     div.setAttribute('aria-hidden', 'true');
     document.body.appendChild(div);
   }
@@ -2783,7 +2798,9 @@ function mirrorScale(ta) {
   const padB = parseFloat(cs.paddingBottom) || 0;
   const lh = parseFloat(cs.lineHeight) || 0;
 
-  const div = configTaMirror(ta);
+  // Its own slot: this runs from scaleMirrorTop(), which callers invoke in the
+  // middle of their own measurement. Sharing the element emptied theirs.
+  const div = configTaMirror(ta, 'scale');
   div.textContent = ta.value;
   const mirrorBox = div.getBoundingClientRect().height;
   div.textContent = '';
@@ -2814,10 +2831,14 @@ function textareaCaretCoords(ta, index) {
   // A non-empty span so it has a layout box even at end-of-text / end-of-line.
   span.textContent = ta.value.slice(index) || '.';
   div.appendChild(span);
-  const top = scaleMirrorTop(ta, span.offsetTop);
-  const left = span.offsetLeft;
-  const height = parseFloat(cs.lineHeight) || span.offsetHeight;
+  // Read the geometry out BEFORE converting it: scaleMirrorTop may measure on
+  // its own, and anything it does must not be able to reach a span we are still
+  // reading. Its own mirror slot guarantees that now; taking the readings first
+  // means this does not quietly depend on that.
+  const offTop = span.offsetTop, left = span.offsetLeft, offH = span.offsetHeight;
   div.textContent = '';
+  const top = scaleMirrorTop(ta, offTop);
+  const height = parseFloat(cs.lineHeight) || offH;
   return { top, left, height };
 }
 
