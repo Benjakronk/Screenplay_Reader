@@ -374,38 +374,52 @@ window.Suggestions = (function () {
     if (!live() || !items.length) return;
 
     $('suggest-count').textContent = `(${items.length})`;
-    const host = $('suggestions-list');
-    host.innerHTML = '';
+    renderInto($('suggestions-list'));
+  }
 
-    for (const s of items) {
-      const el = document.createElement('div');
-      el.className = 'suggest-item ' + s.kind + (s.orphaned ? ' orphaned' : '');
-      el.innerHTML =
-        `<div class="suggest-head">
-           <span class="suggest-kind">${s.kind === 'insert' ? 'add' : 'remove'}</span>
-           <span class="suggest-who">${esc(s.authorName)}</span>
-         </div>
-         <div class="suggest-text">${esc(s.text)}</div>` +
-        (s.orphaned ? '<div class="comment-note">This text is no longer in the script.</div>' : '') +
-        `<div class="suggest-actions">
-           <button class="suggest-accept">Accept</button>
-           <button class="suggest-reject">Reject</button>
-         </div>`;
-      el.querySelector('.suggest-accept').onclick = () => { accept(s.id); redraw(); };
-      el.querySelector('.suggest-reject').onclick = () => { reject(s.id); redraw(); };
-      if (!s.orphaned) {
-        el.querySelector('.suggest-text').onclick = () => {
-          const ta = $('editor');
-          if (!ta) return;
-          if (typeof textareaCaretCoords === 'function') {
-            ta.scrollTop = Math.max(0, textareaCaretCoords(ta, s.from).top - ta.clientHeight / 3);
-          }
-          ta.setSelectionRange(s.from, s.to);
-        };
-      }
-      if (readOnly()) for (const b of el.querySelectorAll('button')) b.disabled = true;
-      host.appendChild(el);
+  function itemEl(s) {
+    const el = document.createElement('div');
+    el.className = 'suggest-item ' + s.kind + (s.orphaned ? ' orphaned' : '');
+    el.innerHTML =
+      `<div class="suggest-head">
+         <span class="suggest-kind">${s.kind === 'insert' ? 'add' : 'remove'}</span>
+         <span class="suggest-who">${esc(s.authorName)}</span>
+       </div>
+       <div class="suggest-text">${esc(s.text)}</div>` +
+      (s.orphaned ? '<div class="comment-note">This text is no longer in the script.</div>' : '') +
+      `<div class="suggest-actions">
+         <button class="suggest-accept">Accept</button>
+         <button class="suggest-reject">Reject</button>
+       </div>`;
+    el.querySelector('.suggest-accept').onclick = () => { accept(s.id); redraw(); };
+    el.querySelector('.suggest-reject').onclick = () => { reject(s.id); redraw(); };
+    if (!s.orphaned) {
+      el.querySelector('.suggest-text').onclick = () => {
+        const ta = $('editor');
+        if (!ta) return;
+        if (typeof textareaCaretCoords === 'function') {
+          ta.scrollTop = Math.max(0, textareaCaretCoords(ta, s.from).top - ta.clientHeight / 3);
+        }
+        ta.setSelectionRange(s.from, s.to);
+      };
     }
+    if (readOnly()) for (const b of el.querySelectorAll('button')) b.disabled = true;
+    return el;
+  }
+
+  // Builds the list into any host, so the sidebar panel and the review modal
+  // stay one implementation. Returns how many there are.
+  function renderInto(host) {
+    if (!host || !live()) return 0;
+    const items = list();
+    host.innerHTML = '';
+    if (!items.length) {
+      host.innerHTML = '<p class="comment-empty">Turn on suggest mode (✎) and type: ' +
+                       'your changes are proposed for someone else to accept.</p>';
+      return 0;
+    }
+    for (const s of items) host.appendChild(itemEl(s));
+    return items.length;
   }
 
   // ---------- lifecycle ----------
@@ -457,6 +471,8 @@ window.Suggestions = (function () {
     attach, detach, redraw,
     enabled, setEnabled, toggle: () => setEnabled(!suggesting),
     list, accept, reject, acceptAll, rejectAll,
+    // Used by review.js to build the same list inside its modal.
+    renderInto,
     // Exposed for collab/test-suggestions.mjs.
     _recordInsert: recordInsert, _recordDelete: recordDelete,
   };

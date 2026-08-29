@@ -200,8 +200,21 @@ body.sidebar-collapsed #sidebar {
 .crumbs {
   font: 0.95rem/1 var(--courier); color: var(--ink); flex: 1;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* Shrinks to make room for the buttons, but never to nothing: a script you
+     cannot name is as bad as a button you cannot reach. Once it bottoms out the
+     topbar overflows, which is the signal layoutTopbar() measures. */
+  min-width: 4.5rem;
 }
-.actions { display: flex; align-items: center; gap: 0.3rem; }
+/* The buttons keep their natural size; the crumbs absorb the slack. Letting
+   them shrink instead squashed the labels into unreadable slivers, and the
+   topbar never reported an overflow for layoutTopbar to act on. */
+.actions { display: flex; align-items: center; gap: 0.3rem; flex: 0 0 auto; }
+.topbar > button { flex: 0 0 auto; }
+
+/* Moved into the ⋯ menu by layoutTopbar because the topbar ran out of room. */
+.topbar [data-prio].overflowed { display: none !important; }
+#btn-more.hidden { display: none; }
+#btn-more { font-weight: 700; letter-spacing: 0.05em; }
 .actions button, .icon-btn {
   background: var(--paper); border: 1px solid var(--rule); padding: 0.3rem 0.55rem;
   border-radius: 4px; cursor: pointer; font-size: 0.85rem; color: var(--ink);
@@ -326,6 +339,9 @@ body.typewriter .pane { padding-top: 40vh; padding-bottom: 40vh; }
   font: 0.85rem var(--courier);
   border: 1px solid var(--rule); border-radius: 4px; padding: 0.25rem;
   background: var(--paper); color: var(--ink); max-width: 30ch;
+  /* Shrinks rather than joining the overflow menu: a <select> cannot be opened
+     from a menu entry, so hiding it would take the feature away entirely. */
+  flex: 0 1 auto; min-width: 5rem;
 }
 
 /* ---------- tabs ---------- */
@@ -906,6 +922,12 @@ body.perform .screenplay {
   .actions button, .icon-btn { padding: 0.25rem 0.35rem; font-size: 0.75rem; }
   .format-toolbar { padding: 0.2rem 0.4rem; }
   .ft-banner { display: none; }
+  .scene-nav { max-width: 10ch; }
+  .crumbs { min-width: 3rem; }
+  /* A modal that is 420px wide has nothing to sit in on a 360px screen. */
+  .modal { min-width: 0; width: 96vw; max-width: 96vw; }
+  .modal-wide, .modal-palette, .modal-diff, .modal-tp,
+  .modal-cards, .modal-review { min-width: 0; width: 96vw; max-width: 96vw; }
 }
 
 /* ---------- print → PDF ----------
@@ -1156,3 +1178,46 @@ body.suggesting .editor { box-shadow: inset 0 2px 0 var(--accent); }
 }
 .suggest-actions button:hover:not(:disabled) { border-color: var(--accent); }
 .suggest-actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- review modal ----------
+   Comments and suggestions in one place, with the whole window to work in.
+   The sidebar panels stay exactly as they were; this is an addition, for the
+   case the sidebar is squeezed or switched off entirely. */
+
+#btn-review.hidden { display: none; }
+#btn-review { position: relative; }
+.review-count {
+  margin-left: 0.2rem; font-size: 0.65rem; font-weight: 700;
+  background: var(--accent); color: white;
+  border-radius: 999px; padding: 0.02rem 0.3rem; vertical-align: top;
+}
+.review-count.hidden { display: none; }
+
+.modal-review { width: min(980px, 95vw); max-width: min(980px, 95vw); min-width: 0; height: min(700px, 85vh); }
+.modal-review .modal-body { height: 100%; padding: 0.75rem 1rem 1rem; }
+
+.review-cols {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem;
+  height: 100%; align-items: start;
+}
+.review-col { display: flex; flex-direction: column; min-height: 0; max-height: 100%; }
+.review-col h4 { margin: 0 0 0.4rem; }
+.review-n { color: var(--muted); font-weight: 400; }
+.review-bulk { display: flex; gap: 0.35rem; margin-bottom: 0.5rem; }
+.review-bulk button {
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--paper);
+  color: inherit; font-size: 0.75rem; padding: 0.2rem 0.5rem; cursor: pointer;
+}
+.review-bulk button:hover:not(:disabled) { border-color: var(--accent); }
+.review-bulk button:disabled { opacity: 0.45; cursor: default; }
+/* Each column scrolls on its own, so a long comment thread never pushes the
+   suggestions out of reach. */
+.review-list { overflow-y: auto; flex: 1; min-height: 0; padding-right: 0.2rem; }
+
+/* One column below the split, suggestions first: they block someone else's
+   work, so they are the thing to deal with. */
+@media (max-width: 720px) {
+  .review-cols { grid-template-columns: 1fr; overflow-y: auto; }
+  .review-col { max-height: none; }
+  .review-list { overflow: visible; }
+}

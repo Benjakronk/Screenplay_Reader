@@ -4372,6 +4372,118 @@ function syncFullscreenButton() {
 }
 document.addEventListener('fullscreenchange', syncFullscreenButton);
 
+// ---------- topbar overflow ----------
+//
+// On a narrow screen the topbar simply ran off to the right and the buttons
+// past the edge were unreachable — there was no wrap, no scroll and no menu.
+// Rather than shrink everything until it is unreadable, controls move into a
+// "⋯" menu as room runs out, highest data-prio first, so the panes and Save are
+// the last to go and nothing is ever merely invisible.
+//
+// Measuring beats guessing at breakpoints: the topbar's own content decides,
+// so a long script name, a hidden collaboration button or a translated label
+// all take care of themselves.
+
+function topbarItems() {
+  const bar = document.querySelector('.topbar');
+  if (!bar) return [];
+  return [...bar.querySelectorAll('[data-prio]')]
+    // A control a feature has switched off (the cloud-only ones) is not in the
+    // running at all — it must not reappear in the menu.
+    .filter((el) => !el.classList.contains('hidden'));
+}
+
+let _layingOutTopbar = false;
+function layoutTopbar() {
+  const bar = document.querySelector('.topbar');
+  const more = $('btn-more');
+  if (!bar || !more) return;
+  // Hiding a control resizes the bar's contents, which the ResizeObserver
+  // below would report straight back as another change.
+  if (_layingOutTopbar) return;
+  _layingOutTopbar = true;
+  try { layoutTopbarNow(bar, more); } finally { _layingOutTopbar = false; }
+}
+
+function layoutTopbarNow(bar, more) {
+  const items = topbarItems().sort(
+    (a, b) => Number(b.dataset.prio) - Number(a.dataset.prio));
+
+  for (const el of items) el.classList.remove('overflowed');
+  more.classList.add('hidden');
+
+  // scrollWidth exceeds clientWidth only once the flexible crumbs have hit
+  // their min-width, so this fires when the buttons genuinely do not fit.
+  const fits = () => bar.scrollWidth <= bar.clientWidth + 1;
+  if (fits()) return;
+
+  more.classList.remove('hidden');     // it takes room of its own, so add first
+  for (const el of items) {
+    if (fits()) break;
+    el.classList.add('overflowed');
+  }
+}
+
+// Strips the keyboard hint out of a title so it can be shown separately.
+function overflowLabel(el) {
+  const t = (el.getAttribute('title') || '').trim();
+  const body = t.replace(/\s*\((?:Ctrl|Alt|Shift|F\d)[^)]*\)\s*$/i, '').trim();
+  return body || (el.textContent || '').trim() || 'Action';
+}
+function overflowHint(el) {
+  const m = (el.getAttribute('title') || '').match(/\((?:Ctrl|Alt|Shift|F\d)[^)]*\)\s*$/i);
+  return m ? m[0].replace(/[()]/g, '').trim() : '';
+}
+
+function overflowMenuItems() {
+  const out = [];
+  for (const el of topbarItems()) {          // document order reads naturally
+    if (!el.classList.contains('overflowed')) continue;
+
+    // A group (panes, zoom) contributes one entry per button, since "Zoom" on
+    // its own would not be actionable.
+    const inner = el.tagName === 'BUTTON' ? [] : [...el.querySelectorAll('button')];
+    if (inner.length) {
+      for (const b of inner) {
+        out.push({ label: overflowLabel(b), hint: overflowHint(b),
+                   disabled: b.disabled, action: () => b.click() });
+      }
+      continue;
+    }
+
+    const box = el.querySelector('input[type="checkbox"]');
+    if (box) {
+      out.push({ label: overflowLabel(el) + (box.checked ? '  ✓' : ''),
+                 action: () => { box.click(); layoutTopbar(); } });
+      continue;
+    }
+
+    if (el.tagName === 'BUTTON') {
+      out.push({ label: overflowLabel(el), hint: overflowHint(el),
+                 disabled: el.disabled, action: () => el.click() });
+    }
+  }
+  return out;
+}
+
+function showOverflowMenu(ev) {
+  ev.stopPropagation();
+  const items = overflowMenuItems();
+  if (!items.length) return;
+  const r = ev.currentTarget.getBoundingClientRect();
+  showContextMenu(r.right - 8, r.bottom + 4, items);
+}
+
+// The topbar's own width changes with the sidebar and the window; its CONTENT
+// changes when a cloud session shows the collaboration buttons, which is why
+// layoutTopbar is also exported for those to call.
+if (typeof ResizeObserver === 'function') {
+  const bar = document.querySelector('.topbar');
+  if (bar) new ResizeObserver(() => layoutTopbar()).observe(bar);
+} else {
+  window.addEventListener('resize', layoutTopbar);
+}
+
 function togglePerform() {
   if (document.body.classList.contains('perform')) {
     document.body.classList.remove('perform');
@@ -4455,6 +4567,8 @@ function wire() {
   $('btn-zoom-out').onclick = zoomOut;
   $('btn-zoom-reset').onclick = zoomReset;
   $('btn-sync').onclick = toggleSplitSync;
+  { const b = $('btn-more'); if (b) b.onclick = showOverflowMenu; }
+  layoutTopbar();
 
   for (const btn of document.querySelectorAll('.mode-switch button')) {
     btn.onclick = () => togglePane(btn.dataset.pane);

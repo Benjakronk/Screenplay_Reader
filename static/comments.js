@@ -286,19 +286,25 @@ window.Comments = (function () {
     if (!panel) return;
     panel.classList.toggle('hidden', !live());
     if (!live()) return;
+    renderInto($('comments-list'));
+  }
 
+  // Builds the thread list into any host, so the sidebar panel and the review
+  // modal show the same threads with the same controls rather than two
+  // implementations drifting apart. Returns how many there are.
+  function renderInto(host) {
+    if (!host || !live()) return 0;
     const items = list();
     const open = items.filter((c) => !c.resolved && !c.orphaned);
     const orphan = items.filter((c) => !c.resolved && c.orphaned);
     const done = items.filter((c) => c.resolved);
 
-    const host = $('comments-list');
     host.innerHTML = '';
 
     if (!items.length) {
       host.innerHTML = '<p class="comment-empty">Select text in the editor and choose ' +
                        '“Comment on selection” to start a thread.</p>';
-      return;
+      return 0;
     }
 
     const section = (label, group, cls) => {
@@ -315,6 +321,7 @@ window.Comments = (function () {
     section('', open, '');
     section('Orphaned', orphan, 'orphaned');
     section('Resolved', done, 'resolved');
+    return items.length;
   }
 
   function threadEl(c, cls) {
@@ -461,6 +468,8 @@ window.Comments = (function () {
   return {
     attach, detach, redraw, commentOnSelection, focusComment,
     list, add, reply, setResolved, remove,
+    // Used by review.js to build the same list inside its modal.
+    renderInto,
     // Exposed for tests in collab/test-comments.mjs.
     _rangeOf: rangeOf,
   };

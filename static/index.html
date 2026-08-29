@@ -33,36 +33,42 @@
       <button id="btn-sidebar-toggle" class="icon-btn" title="Toggle sidebar (Ctrl+\)" aria-label="Toggle sidebar">☰</button>
       <div class="crumbs" id="crumbs">No script selected</div>
       <select id="scene-nav" class="scene-nav" title="Jump to scene or section"><option>— jump to —</option></select>
-      <button id="btn-stats" class="icon-btn" title="Production stats">📊</button>
-      <button id="btn-cards" class="icon-btn" title="Beat board (index cards)">📇</button>
+      <!-- data-prio drives the overflow menu: when the topbar runs out of room,
+           controls are moved into the ⋯ menu HIGHEST NUMBER FIRST. So the panes
+           and Save (lowest) are the last things to go, and nothing ever
+           disappears without somewhere to reach it. See layoutTopbar(). -->
+      <button id="btn-stats" class="icon-btn" data-prio="78" title="Production stats">📊</button>
+      <button id="btn-cards" class="icon-btn" data-prio="80" title="Beat board (index cards)">📇</button>
       <div class="actions">
         <!-- Independent pane toggles, not a two-way switch: Read shows the
              paginated preview, Edit shows the source, and either, both or the
              other can be on. They are never both off. -->
-        <div class="mode-switch" role="group" aria-label="Panes">
+        <div class="mode-switch" role="group" aria-label="Panes" data-prio="10">
           <button data-pane="view" class="active" title="Show the paginated preview (Ctrl+E)">Read</button>
           <button data-pane="source" title="Show the Fountain source (Ctrl+E)">Edit</button>
         </div>
-        <label class="markup-toggle" title="Show Fountain markers in the preview">
+        <label class="markup-toggle" data-prio="100" title="Show Fountain markers in the preview">
           <input id="show-markup" type="checkbox" /> markup
         </label>
-        <button id="btn-suggest" class="icon-btn hidden" title="Suggest changes instead of editing directly" aria-label="Suggest changes">✎</button>
-        <button id="btn-sync" class="icon-btn active" title="Toggle scroll sync" aria-label="Toggle scroll sync">🔗</button>
-        <div class="zoom-group" role="group" aria-label="Zoom">
+        <button id="btn-review" class="icon-btn hidden" data-prio="25" title="Comments and suggestions" aria-label="Comments and suggestions">💬<span id="review-count" class="review-count hidden"></span></button>
+        <button id="btn-suggest" class="icon-btn hidden" data-prio="30" title="Suggest changes instead of editing directly" aria-label="Suggest changes">✎</button>
+        <button id="btn-sync" class="icon-btn active" data-prio="65" title="Toggle scroll sync" aria-label="Toggle scroll sync">🔗</button>
+        <div class="zoom-group" role="group" aria-label="Zoom" data-prio="95">
           <button id="btn-zoom-out" class="icon-btn" title="Zoom out (Ctrl+-)">A−</button>
           <button id="btn-zoom-reset" class="icon-btn" title="Reset zoom (Ctrl+0)">A°</button>
           <button id="btn-zoom-in" class="icon-btn" title="Zoom in (Ctrl+=)">A+</button>
         </div>
-        <button id="btn-fullscreen" class="icon-btn" title="Fullscreen" aria-label="Fullscreen">⛶</button>
-        <button id="btn-perform" title="Performance mode (Ctrl+Shift+P)">🎭</button>
-        <button id="btn-history" disabled title="Version history">⟲</button>
-        <button id="btn-export" disabled title="Export PDF (Ctrl+Shift+S)">↓ PDF</button>
-        <button id="btn-export-fdx" disabled title="Export Final Draft (.fdx)">↓ FDX</button>
-        <button id="btn-save" disabled title="Save (Ctrl+S)">Save</button>
-        <button id="btn-rename" disabled title="Rename">Rename</button>
-        <button id="btn-delete" disabled class="danger" title="Delete">Delete</button>
-        <button id="btn-theme" class="icon-btn" title="Theme (Ctrl+Shift+T)" aria-label="Theme">🎨</button>
-        <button id="btn-help" class="icon-btn" title="Help (F1 or ?)" aria-label="Help">?</button>
+        <button id="btn-fullscreen" class="icon-btn" data-prio="75" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+        <button id="btn-perform" data-prio="85" title="Performance mode (Ctrl+Shift+P)">🎭</button>
+        <button id="btn-history" disabled data-prio="45" title="Version history">⟲</button>
+        <button id="btn-export" disabled data-prio="50" title="Export PDF (Ctrl+Shift+S)">↓ PDF</button>
+        <button id="btn-export-fdx" disabled data-prio="55" title="Export Final Draft (.fdx)">↓ FDX</button>
+        <button id="btn-save" disabled data-prio="20" title="Save (Ctrl+S)">Save</button>
+        <button id="btn-rename" disabled data-prio="40" title="Rename">Rename</button>
+        <button id="btn-delete" disabled class="danger" data-prio="35" title="Delete">Delete</button>
+        <button id="btn-theme" class="icon-btn" data-prio="70" title="Theme (Ctrl+Shift+T)" aria-label="Theme">🎨</button>
+        <button id="btn-help" class="icon-btn" data-prio="68" title="Help (F1 or ?)" aria-label="Help">?</button>
+        <button id="btn-more" class="icon-btn hidden" title="More actions" aria-label="More actions" aria-haspopup="menu">⋯</button>
       </div>
     </header>
 
@@ -178,6 +184,7 @@
   <script src="collab.js"></script>
   <script src="comments.js"></script>
   <script src="suggestions.js"></script>
+  <script src="review.js"></script>
   <script src="cloud.js"></script>
   <script src="backend.js"></script>
   <script src="app.js"></script>
