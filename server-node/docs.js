@@ -60,10 +60,17 @@ function replaceText(doc, text) {
   });
 }
 
-// Builds the initial CRDT state for a brand-new document.
-function initialState(text) {
+// Builds the initial CRDT state for a brand-new document. `user` is credited
+// with the seed text, so an imported script is attributed to whoever imported
+// it rather than reading as text nobody wrote.
+function initialState(text, user = null) {
   const doc = new Y.Doc();
   replaceText(doc, text || '');
+  if (user) {
+    doc.getMap('authors').set(String(doc.clientID), {
+      id: user.id || '', name: user.name || user.email || 'Someone',
+    });
+  }
   return Buffer.from(Y.encodeStateAsUpdate(doc));
 }
 
@@ -108,6 +115,49 @@ async function listVersions(docId) {
   return rows.map(r => ({ name: r.name, timestamp: r.timestamp, size: Number(r.size) }));
 }
 
+// Who contributed to each version, by comparing its Yjs state vector with the
+// one before it: any client whose clock advanced produced operations in that
+// window. Names come from the document's own author registry.
+//
+// This is deliberately coarse. It answers "who worked on this version", not
+// "who wrote this sentence" — the latter needs Yjs snapshots, which require
+// garbage collection to be off and the document to retain every deletion
+// forever. `Blame` answers the per-character question on the CURRENT text
+// instead, where the CRDT already knows the answer for free.
+//
+// Versions saved before this column existed have no vector; they report no
+// contributors rather than a wrong guess.
+async function versionContributors(docId, authors) {
+  const { rows } = await query(
+    `SELECT name, state_vector, author_id FROM doc_versions
+      WHERE doc_id=$1 ORDER BY created_at ASC`, [docId]);
+
+  const decode = (buf) => {
+    if (!buf || !buf.length) return null;
+    try { return Y.decodeStateVector(new Uint8Array(buf)); } catch { return null; }
+  };
+
+  const out = new Map();
+  let prev = null;
+  for (const row of rows) {
+    const now = decode(row.state_vector);
+    const names = new Set();
+    let unattributed = false;
+    if (now) {
+      for (const [client, clock] of now) {
+        const before = prev ? (prev.get(client) || 0) : 0;
+        if (clock <= before) continue;              // this client did nothing
+        const who = authors[String(client)];
+        if (who && who.name) names.add(who.name);
+        else unattributed = true;
+      }
+      prev = now;
+    }
+    out.set(row.name, { contributors: [...names].sort(), unattributed });
+  }
+  return out;
+}
+
 async function versionContent(docId, name) {
   const { rows } = await query(
     'SELECT content FROM doc_versions WHERE doc_id=$1 AND name=$2', [docId, name]);
@@ -117,7 +167,8 @@ async function versionContent(docId, name) {
 // Mirrors server.py's snapshot_if_changed(): checkpoint the CURRENT content
 // before it is replaced, skip if nothing changed, and throttle automatic
 // checkpoints so typing doesn't fill the table.
-async function snapshotIfChanged(docId, currentContent, { force = false, authorId = null } = {}) {
+async function snapshotIfChanged(docId, currentContent,
+                                 { force = false, authorId = null, stateVector = null } = {}) {
   if (currentContent == null) return false;
 
   const { rows } = await query(
@@ -141,9 +192,10 @@ async function snapshotIfChanged(docId, currentContent, { force = false, authorI
   }
 
   await query(
-    `INSERT INTO doc_versions (doc_id, name, timestamp, content, author_id, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
-    [docId, name, base, currentContent, authorId, Date.now()]);
+    `INSERT INTO doc_versions (doc_id, name, timestamp, content, author_id, created_at, state_vector)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [docId, name, base, currentContent, authorId, Date.now(),
+     stateVector ? Buffer.from(stateVector) : null]);
 
   await query(
     `DELETE FROM doc_versions WHERE doc_id = $1 AND id NOT IN (
@@ -156,5 +208,5 @@ module.exports = {
   Y_TEXT_FIELD, SNAPSHOT_MAX_PER_DOC, SNAPSHOT_MIN_INTERVAL_MS,
   docFromState, textOf, replaceText, initialState, normalizeNewlines,
   loadState, storeState, storedText,
-  stamp, listVersions, versionContent, snapshotIfChanged,
+  stamp, listVersions, versionContent, snapshotIfChanged, versionContributors,
 };

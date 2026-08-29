@@ -196,6 +196,7 @@ window.Cloud = (function () {
     markReadOnly(info.role === 'viewer');
     if (window.Comments) window.Comments.attach();
     if (window.Suggestions) window.Suggestions.attach();
+    if (window.Blame) window.Blame.attach();
     if (window.Review) window.Review.attach();
     // The collaboration buttons only appear now, so the topbar has to remeasure
     // what still fits.
@@ -205,6 +206,7 @@ window.Cloud = (function () {
   function leaveDocument() {
     if (window.Comments) window.Comments.detach();
     if (window.Suggestions) window.Suggestions.detach();
+    if (window.Blame) window.Blame.detach();
     if (window.Review) window.Review.detach();
     if (window.Collab) window.Collab.detach();
     peers = [];

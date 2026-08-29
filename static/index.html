@@ -50,6 +50,7 @@
         <label class="markup-toggle" data-prio="100" title="Show Fountain markers in the preview">
           <input id="show-markup" type="checkbox" /> markup
         </label>
+        <button id="btn-blame" class="icon-btn hidden" data-prio="28" title="Show who wrote what" aria-label="Show who wrote what">▤</button>
         <button id="btn-review" class="icon-btn hidden" data-prio="25" title="Comments and suggestions" aria-label="Comments and suggestions">💬<span id="review-count" class="review-count hidden"></span></button>
         <button id="btn-suggest" class="icon-btn hidden" data-prio="30" title="Suggest changes instead of editing directly" aria-label="Suggest changes">✎</button>
         <button id="btn-sync" class="icon-btn active" data-prio="65" title="Toggle scroll sync" aria-label="Toggle scroll sync">🔗</button>
@@ -184,6 +185,7 @@
   <script src="collab.js"></script>
   <script src="comments.js"></script>
   <script src="suggestions.js"></script>
+  <script src="blame.js"></script>
   <script src="review.js"></script>
   <script src="cloud.js"></script>
   <script src="backend.js"></script>

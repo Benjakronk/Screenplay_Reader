@@ -1336,6 +1336,19 @@ async function openDiff(snapshotName, snapshotTimestamp) {
 }
 
 // ---------- history modal ----------
+// Who worked on a version, as the server computed it from Yjs state vectors.
+// Absent in local and offline mode, and on versions saved before the column
+// existed — in which case the row simply says nothing rather than guessing.
+function historyAuthors(s) {
+  const names = Array.isArray(s.contributors) ? s.contributors : [];
+  if (!names.length && !s.unattributed) return '';
+  const shown = names.map(n => `<span class="hist-who">${escapeHtml(n)}</span>`);
+  if (s.unattributed) shown.push('<span>others</span>');
+  const label = shown.length === 1 ? shown[0]
+    : shown.slice(0, -1).join(', ') + ' and ' + shown[shown.length - 1];
+  return `<span class="hist-authors">${label}</span>`;
+}
+
 async function openHistory() {
   if (!state.currentPath) return;
   const res = await fetch('/api/history?path=' + encodeURIComponent(state.currentPath));
@@ -1354,6 +1367,7 @@ async function openHistory() {
           ${snapshots.map(s => `<li>
             <span class="hist-ts">${formatTs(s.timestamp)}</span>
             <span class="hist-size">${s.size} B</span>
+            ${historyAuthors(s)}
             <button data-name="${s.name}" data-ts="${s.timestamp}" class="hist-diff">Diff</button>
             <button data-name="${s.name}" class="hist-restore">Restore</button>
           </li>`).join('')}
@@ -2861,6 +2875,59 @@ function textareaRangeRects(ta, start, end) {
   }));
   div.textContent = '';
   return rects;
+}
+
+// Measures MANY ranges in a single mirror layout, returning a Map keyed by
+// each range's `key`. textareaRangeRects lays out the whole document once per
+// range, which on a feature-length script means tens of kilobytes of text laid
+// out per comment; batching turns that into one pass.
+//
+// Ranges must be walked in order and not overlap for a single pass to work, so
+// anything overlapping its predecessor falls back to a measurement of its own.
+// Overlapping ranges are legitimate (two comments on the same words) but
+// uncommon, so the common case stays at one layout.
+function batchRangeRects(ta, ranges) {
+  const sorted = ranges.slice().sort((a, b) => a.from - b.from || a.to - b.to);
+  const inline = [], spill = [];
+  let pos = 0;
+  for (const r of sorted) {
+    if (r.from >= pos) { inline.push(r); pos = r.to; } else { spill.push(r); }
+  }
+
+  const out = new Map();
+  if (inline.length) {
+    const div = configTaMirror(ta);
+    div.textContent = '';
+    const spans = [];
+    let at = 0;
+    for (const r of inline) {
+      if (r.from > at) div.appendChild(document.createTextNode(ta.value.slice(at, r.from)));
+      const sp = document.createElement('span');
+      sp.textContent = ta.value.slice(r.from, r.to);
+      div.appendChild(sp);
+      spans.push([r, sp]);
+      at = r.to;
+    }
+    div.appendChild(document.createTextNode(ta.value.slice(at)));
+    const mr = div.getBoundingClientRect();
+
+    // READ EVERY RECTANGLE FIRST, then convert. Interleaving the two means
+    // calling scaleMirrorTop while the spans are still being read, and anything
+    // that measures on its own can empty the mirror mid-walk, leaving the
+    // remaining spans detached and silently yielding no rectangles.
+    const raw = spans.map(([r, sp]) => [r, Array.from(sp.getClientRects()).map((c) => ({
+      top: c.top - mr.top, left: c.left - mr.left, width: c.width, height: c.height,
+    }))]);
+    div.textContent = '';
+
+    for (const [r, rects] of raw) {
+      out.set(r.key, rects.map((c) => ({
+        top: scaleMirrorTop(ta, c.top), left: c.left, width: c.width, height: c.height,
+      })));
+    }
+  }
+  for (const r of spill) out.set(r.key, textareaRangeRects(ta, r.from, r.to));
+  return out;
 }
 
 // Place a blinking caret-shaped overlay inside the source textarea at the

@@ -116,21 +116,92 @@ async function readText(docId) {
   }
 }
 
+// Text plus the two things version attribution needs, read in ONE direct
+// connection rather than three: the state vector (which clients had produced
+// how much, at this instant) and the author registry (which client belongs to
+// which person). See AUTHORS_FIELD in static/blame.js.
+async function readForSnapshot(docId) {
+  const take = (doc) => ({
+    text: docs.textOf(doc),
+    vector: Buffer.from(Y.encodeStateVector(doc)),
+    authors: readAuthorsFrom(doc),
+  });
+  if (!server) {
+    const bytes = await docs.loadState(docId);
+    return take(docs.docFromState(bytes));
+  }
+  const conn = await server.hocuspocus.openDirectConnection(String(docId));
+  try {
+    let out = null;
+    await conn.transact((doc) => { out = take(doc); });
+    return out;
+  } finally {
+    await conn.disconnect();
+  }
+}
+
+// clientID -> { id, name }, as the browsers registered themselves. Clients that
+// never registered (a file import, a restore, anything written before this
+// existed) are simply absent, and callers report them as unattributed rather
+// than guessing a name.
+const AUTHORS_FIELD = 'authors';
+function readAuthorsFrom(doc) {
+  const out = {};
+  try {
+    doc.getMap(AUTHORS_FIELD).forEach((v, k) => {
+      if (v && typeof v === 'object') out[String(k)] = { id: v.id || '', name: v.name || '' };
+    });
+  } catch { /* no registry yet */ }
+  return out;
+}
+
+async function readAuthors(docId) {
+  if (!server) {
+    const bytes = await docs.loadState(docId);
+    return readAuthorsFrom(docs.docFromState(bytes));
+  }
+  const conn = await server.hocuspocus.openDirectConnection(String(docId));
+  try {
+    let out = {};
+    await conn.transact((doc) => { out = readAuthorsFrom(doc); });
+    return out;
+  } finally {
+    await conn.disconnect();
+  }
+}
+
+// Records a clientID against a person. Used when the SERVER writes text on
+// someone's behalf – a restore or an .fdx import – so that work is attributed
+// to whoever asked for it instead of showing up as unattributed.
+function registerAuthor(doc, user) {
+  if (!user) return;
+  doc.getMap(AUTHORS_FIELD).set(String(doc.clientID), {
+    id: user.id || '', name: user.name || user.email || 'Someone',
+  });
+}
+
 // Wholesale replacement – restore from history, .fdx import, seeding a new
 // document. Ordinary edits never come through here; they arrive from the
 // browser as incremental CRDT updates.
-async function writeText(docId, text) {
+// `user`, when given, is the person on whose behalf this write happens, so a
+// restore or an import is attributed to them rather than appearing as text
+// nobody wrote.
+async function writeText(docId, text, user = null) {
   if (!server) {
     // No collaboration server running (create-user.js, tests): write directly.
     const bytes = await docs.loadState(docId);
     const doc = docs.docFromState(bytes);
     docs.replaceText(doc, text);
+    registerAuthor(doc, user);
     await docs.storeState(docId, Y.encodeStateAsUpdate(doc));
     return;
   }
   const conn = await server.hocuspocus.openDirectConnection(String(docId));
   try {
-    await conn.transact((doc) => { docs.replaceText(doc, text); });
+    await conn.transact((doc) => {
+      docs.replaceText(doc, text);
+      registerAuthor(doc, user);
+    });
   } finally {
     await conn.disconnect();
   }
@@ -165,5 +236,6 @@ function connectionCount(docId) {
 module.exports = {
   createCollabServer, listen, shutdown,
   readText, writeText, connectionCount, closeConnections,
+  readForSnapshot, readAuthors, AUTHORS_FIELD,
   COLLAB_PORT,
 };

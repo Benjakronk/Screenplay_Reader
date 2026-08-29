@@ -115,6 +115,8 @@ window.Suggestions = (function () {
 
   function record(kind, from, to) {
     if (!live() || readOnly() || to <= from) return null;
+    // As in comments.js: a proposal is a contribution worth a name.
+    if (window.Blame) window.Blame.register();
     const Y = C().Y, doc = C().ydoc, t = C().ytext;
     const id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     const m = new Y.Map();

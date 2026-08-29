@@ -162,6 +162,22 @@ async function init() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_versions_name
       ON doc_versions(doc_id, name);
   `);
+
+  // WHO CHANGED WHAT BETWEEN TWO VERSIONS.
+  //
+  // author_id records only who pressed Ctrl+S. The Yjs state vector recorded
+  // here says, per client, how many operations that client had produced at the
+  // moment of the snapshot — so comparing one version's vector with the
+  // previous one's names exactly the clients that contributed in between.
+  //
+  // WHY NOT Yjs SNAPSHOTS, which would give per-character attribution inside a
+  // diff: snapshots only work with garbage collection disabled, which means the
+  // document retains every character anyone ever deletes, forever. A state
+  // vector is a few bytes per client and costs the document nothing.
+  //
+  // Added after the table existed, so it is a separate idempotent ALTER —
+  // editing the CREATE TABLE above would do nothing to a live table.
+  await query(`ALTER TABLE doc_versions ADD COLUMN IF NOT EXISTS state_vector BYTEA;`);
 }
 
 module.exports = { pool, query, init, _setDriver };

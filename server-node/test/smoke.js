@@ -430,6 +430,92 @@ async function main() {
     });
   }
 
+  section('who contributed to each version');
+  {
+    // Version attribution compares the Yjs state vector stored with each
+    // version against the previous one's: any client whose clock advanced wrote
+    // something in between. Names come from the document's own author registry,
+    // which the browsers write on their first edit.
+    const Y = require('yjs');
+    const r = await POST('/api/new', { path: 'Blame.fountain', content: 'start\n' },
+      { as: benToken });
+    assert.equal(r.status, 200, r.data && r.data.error);
+    const { rows } = await db.query(
+      "SELECT id FROM documents WHERE path='Blame.fountain' AND deleted_at IS NULL");
+    const docId = rows[0].id;
+
+    // Two people, each with their own Yjs client, editing the one document.
+    const ben = new Y.Doc(), alex = new Y.Doc();
+    const sync = () => {
+      Y.applyUpdate(alex, Y.encodeStateAsUpdate(ben));
+      Y.applyUpdate(ben, Y.encodeStateAsUpdate(alex));
+    };
+    // Each registers on its FIRST EDIT, as the browser does. Registering is
+    // itself an operation, so registering ahead of editing would make someone a
+    // contributor to a version they had not touched.
+    ben.getMap('authors').set(String(ben.clientID), { id: 'u-ben', name: 'Ben' });
+    ben.getText('content').insert(0, 'one\n');
+    sync();
+
+    const snap = async (doc, name) => {
+      await docs.snapshotIfChanged(docId, doc.getText('content').toString(), {
+        force: true, stateVector: Buffer.from(Y.encodeStateVector(doc)),
+      });
+      return name;
+    };
+    await snap(ben, 'v1');
+
+    alex.getMap('authors').set(String(alex.clientID), { id: 'u-alex', name: 'Alex' });
+    alex.getText('content').insert(alex.getText('content').length, 'two by alex\n');
+    sync();
+    await snap(ben, 'v2');
+
+    ben.getText('content').insert(ben.getText('content').length, 'three by ben\n');
+    sync();
+    await snap(ben, 'v3');
+
+    const authors = {};
+    ben.getMap('authors').forEach((v, k) => { authors[String(k)] = v; });
+    const by = await docs.versionContributors(docId, authors);
+    const names = [...by.values()].map(v => v.contributors.join('+'));
+
+    await test('each version names only who changed it', () => {
+      // Oldest first. v1 is Ben's seed; then Alex alone; then Ben alone.
+      assert.deepEqual(names, ['Ben', 'Alex', 'Ben']);
+    });
+
+    await test('a client with no registered name reads as unattributed', async () => {
+      const ghost = new Y.Doc();
+      Y.applyUpdate(ghost, Y.encodeStateAsUpdate(ben));
+      ghost.getText('content').insert(0, 'anonymous\n');
+      Y.applyUpdate(ben, Y.encodeStateAsUpdate(ghost));
+      await snap(ben, 'v4');
+      const again = await docs.versionContributors(docId, authors);
+      const last = [...again.values()].pop();
+      assert.deepEqual(last.contributors, []);
+      assert.equal(last.unattributed, true);
+    });
+
+    await test('history reports contributors over the API', async () => {
+      // The API reads the registry from the stored document, so it has to be
+      // there — in the app the browsers' own edits keep it there.
+      await docs.storeState(docId, Y.encodeStateAsUpdate(ben));
+      const h = await GET('/api/history?path=Blame.fountain', { as: benToken });
+      assert.equal(h.status, 200);
+      const oldest = h.data.snapshots[h.data.snapshots.length - 1];
+      assert.deepEqual(oldest.contributors, ['Ben']);
+    });
+
+    await test('a version saved before the column existed claims no authors', async () => {
+      await db.query(
+        `INSERT INTO doc_versions (doc_id, name, timestamp, content, created_at)
+         VALUES ($1,'legacy.fountain','20200101T000000','old',$2)`, [docId, 1]);
+      const by2 = await docs.versionContributors(docId, authors);
+      assert.deepEqual(by2.get('legacy.fountain').contributors, []);
+      assert.equal(by2.get('legacy.fountain').unattributed, false);
+    });
+  }
+
   server.close();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

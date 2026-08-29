@@ -90,6 +90,10 @@ window.Comments = (function () {
 
   function add(from, to, text) {
     if (!live() || readOnly()) return null;
+    // Commenting is a contribution too. Blame registers this browser's client
+    // on the first text edit, which someone who only comments never makes —
+    // without this they would show up in the history as "others".
+    if (window.Blame) window.Blame.register();
     const Y = C().Y, doc = C().ydoc, t = C().ytext;
     const me = window.Cloud && window.Cloud.user;
     const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -122,6 +126,7 @@ window.Comments = (function () {
 
   function reply(id, text) {
     if (!live() || readOnly()) return;
+    if (window.Blame) window.Blame.register();
     const m = findMap(id);
     if (!m) return;
     const Y = C().Y, doc = C().ydoc;
@@ -174,62 +179,6 @@ window.Comments = (function () {
   // Scrolling does not move the boxes relative to the text, only relative to the
   // viewport, so the host is offset with a transform instead. That is one style
   // write per scroll event and no layout at all.
-
-  // Measures MANY ranges in a single mirror layout. app.js's textareaRangeRects
-  // lays out the whole document once per range, which on a feature-length script
-  // means tens of kilobytes of text laid out per comment. Batching turns that
-  // into one pass.
-  //
-  // Ranges must be walked in order and not overlap for a single pass to work, so
-  // anything that overlaps its predecessor falls back to a measurement of its
-  // own. Overlapping comments are legitimate but uncommon, so the common case
-  // stays at one layout.
-  function batchRangeRects(ta, ranges) {
-    const sorted = ranges.slice().sort((a, b) => a.from - b.from || a.to - b.to);
-    const inline = [], spill = [];
-    let pos = 0;
-    for (const r of sorted) {
-      if (r.from >= pos) { inline.push(r); pos = r.to; } else { spill.push(r); }
-    }
-
-    const out = new Map();
-    if (inline.length) {
-      const div = configTaMirror(ta);
-      div.textContent = '';
-      const spans = [];
-      let at = 0;
-      for (const r of inline) {
-        if (r.from > at) div.appendChild(document.createTextNode(ta.value.slice(at, r.from)));
-        const sp = document.createElement('span');
-        sp.textContent = ta.value.slice(r.from, r.to);
-        div.appendChild(sp);
-        spans.push([r, sp]);
-        at = r.to;
-      }
-      div.appendChild(document.createTextNode(ta.value.slice(at)));
-      const mr = div.getBoundingClientRect();
-
-      // READ EVERY RECTANGLE FIRST, then convert. Interleaving the two means
-      // calling scaleMirrorTop while the spans are still being read, and
-      // anything that measures on its own - as the calibration does - can empty
-      // the mirror mid-walk and leave the remaining spans detached, silently
-      // yielding no rectangles. Reading first makes this loop depend on nothing
-      // but the DOM it just built.
-      const raw = spans.map(([r, sp]) => [r, Array.from(sp.getClientRects()).map((c) => ({
-        top: c.top - mr.top, left: c.left - mr.left, width: c.width, height: c.height,
-      }))]);
-      div.textContent = '';
-
-      for (const [r, rects] of raw) {
-        // Same sub-pixel calibration app.js applies - see scaleMirrorTop.
-        out.set(r.key, rects.map((c) => ({
-          top: scaleMirrorTop(ta, c.top), left: c.left, width: c.width, height: c.height,
-        })));
-      }
-    }
-    for (const r of spill) out.set(r.key, textareaRangeRects(ta, r.from, r.to));
-    return out;
-  }
 
   function rebuildOverlay() {
     const host = overlayHost();

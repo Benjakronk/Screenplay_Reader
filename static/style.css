@@ -1258,3 +1258,34 @@ body.suggesting .editor { box-shadow: inset 0 2px 0 var(--accent); }
   .review-col { max-height: none; }
   .review-list { overflow: visible; }
 }
+
+/* ---------- blame: who wrote what ----------
+   A stripe in the margin rather than a tint behind the text. Blame covers the
+   whole document, so tinting would need a box per wrapped visual line - over a
+   thousand on a feature script, rebuilt on every edit, which is the shape of
+   overlay that once froze the tab. One box per authored stretch instead, and
+   the words stay legible. */
+
+#btn-blame.hidden { display: none; }
+#btn-blame.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+
+#blame-hl { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.blame-stripe {
+  position: absolute; width: 4px; border-radius: 2px; opacity: 0.85;
+  pointer-events: none;
+}
+
+#blame-panel.hidden { display: none; }
+#blame-list { padding: 0 0.3rem 0.4rem; }
+.blame-row {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.82rem; padding: 0.12rem 0;
+}
+.blame-dot { width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }
+.blame-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blame-share { color: var(--muted); font-variant-numeric: tabular-nums; }
+.blame-total { color: var(--muted); font-size: 0.75rem; margin-top: 0.3rem; }
+
+/* Version history attribution */
+.hist-authors { color: var(--muted); font-size: 0.78rem; }
+.hist-authors .hist-who { color: var(--ink); }

@@ -425,8 +425,11 @@ app.post('/api/save', auth.requireUser, async (req, res) => {
     }
 
     if (!req.body?.auto) {
-      const content = await collab.readText(doc.id);
-      await docs.snapshotIfChanged(doc.id, content, { force: true, authorId: req.user.id });
+      // The state vector rides along so the next version can name who
+      // contributed in between - see docs.versionContributors.
+      const snap = await collab.readForSnapshot(doc.id);
+      await docs.snapshotIfChanged(doc.id, snap.text,
+        { force: true, authorId: req.user.id, stateVector: snap.vector });
     }
     const now = Date.now();
     await query('UPDATE documents SET updated_at=$1 WHERE id=$2', [now, doc.id]);
@@ -450,7 +453,7 @@ app.post('/api/new', auth.requireUser, async (req, res) => {
       [docId, req.user.id, now]);
     await query(
       `INSERT INTO doc_state (doc_id, ydoc, updated_at) VALUES ($1,$2,$3)`,
-      [docId, docs.initialState(req.body?.content || ''), now]);
+      [docId, docs.initialState(req.body?.content || '', req.user), now]);
 
     res.json({ ok: true, path: p, id: docId });
   } catch (err) { fail(res, err); }
@@ -495,7 +498,16 @@ app.get('/api/history', auth.requireUser, async (req, res) => {
   try {
     const doc = await resolveDoc(req.user.id, req.query.path);
     if (!doc) return res.status(404).json({ error: 'not found' });
-    res.json({ snapshots: await docs.listVersions(doc.id) });
+
+    const snapshots = await docs.listVersions(doc.id);
+    // Who worked on each version. Best-effort: if the author registry cannot be
+    // read the history still lists, just without names.
+    try {
+      const authors = await collab.readAuthors(doc.id);
+      const by = await docs.versionContributors(doc.id, authors);
+      for (const s of snapshots) Object.assign(s, by.get(s.name) || {});
+    } catch { /* history without attribution is still history */ }
+    res.json({ snapshots });
   } catch (err) { fail(res, err, 500); }
 });
 
@@ -521,9 +533,12 @@ app.post('/api/restore', auth.requireUser, async (req, res) => {
 
     // Checkpoint what is there now, then replace it. Everyone connected sees
     // the restore arrive as an ordinary CRDT update.
-    const current = await collab.readText(doc.id);
-    await docs.snapshotIfChanged(doc.id, current, { force: true, authorId: req.user.id });
-    await collab.writeText(doc.id, content);
+    const snap = await collab.readForSnapshot(doc.id);
+    await docs.snapshotIfChanged(doc.id, snap.text,
+      { force: true, authorId: req.user.id, stateVector: snap.vector });
+    // Attributed to whoever restored it, so the restored text is not text that
+    // nobody appears to have written.
+    await collab.writeText(doc.id, content, req.user);
     res.json({ ok: true });
   } catch (err) { fail(res, err, 500); }
 });
@@ -613,7 +628,7 @@ app.post('/api/import/fdx', auth.requireUser, async (req, res) => {
       [docId, req.user.id, now]);
     await query(
       `INSERT INTO doc_state (doc_id, ydoc, updated_at) VALUES ($1,$2,$3)`,
-      [docId, docs.initialState(text), now]);
+      [docId, docs.initialState(text, req.user), now]);
 
     res.json({ ok: true, path: p, id: docId });
   } catch (err) { fail(res, err, 500); }
