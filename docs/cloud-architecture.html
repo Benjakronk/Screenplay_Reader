@@ -668,6 +668,43 @@ img, svg { max-width: 100%; }
         </div>
 
         <div class="decision">
+          <div class="d-head"><h3>LF is the only line ending the shared text may hold</h3><span class="chip verified">Verified</span></div>
+          <p>
+            Not a style preference — an invariant forced by the editor, and the sharp edge of
+            keeping the textarea. A <code>&lt;textarea&gt;</code> normalises its value: the HTML
+            spec turns CR and CRLF into LF, both on assignment and through
+            <code>setRangeText</code>. So a CRDT holding CRLF describes a document the browser
+            can never reproduce.
+          </p>
+          <p>
+            The two then disagree about how many characters exist, and <strong>every offset
+            crossing between them is wrong by the number of line breaks above it</strong> — a
+            typed edit, a comment anchor, a suggestion range. The edit lands silently in the
+            wrong place; nothing throws.
+          </p>
+          <p>
+            A script imported from a Windows <code>.fountain</code> file held 1430 CRLF pairs.
+            Typing <code>ganske&nbsp;</code> before <code>avventende</code> wrote
+            <code>Roligganske e avventende</code> — two characters early, one per CRLF above that
+            point. Deeper in the document the error passed a thousand characters. A document
+            created in the app was unaffected, which is why this first looked like a
+            collaboration fault rather than a text fault.
+          </p>
+          <p>
+            <code>docs.js</code> keeps CRLF out at every point where whole text enters a document
+            (import, restore, seeding); <code>collab.js</code> heals documents seeded before that
+            gate existed. Deleting a CR is safe from any client: two of them delete the same CRDT
+            item, which merges to one deletion rather than two.
+          </p>
+          <p>
+            Comment and suggestion anchors made this hard to see. The error is applied twice —
+            once recording a browser offset into the CRDT, once reading it back — so the marks
+            <em>looked</em> correctly placed as long as nobody edited. Only the stored quote gave
+            it away, by starting mid-word.
+          </p>
+        </div>
+
+        <div class="decision">
           <div class="d-head"><h3>app.js is not modified</h3><span class="chip untested">Logic tested, DOM wiring not</span></div>
           <p>
             <code>cloud.js</code> wraps four globals from outside. app.js is a classic script with no

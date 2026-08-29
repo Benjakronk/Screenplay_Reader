@@ -30,6 +30,16 @@ turned up — see [`cloud-architecture.md`](cloud-architecture.md) or
 Nothing blocking. These are the known gaps, recorded so they are not rediscovered
 as surprises.
 
+- [ ] **`.gitignore`d scripts arrive with CRLF.** `core.autocrlf` is on in this
+      repo's working copy, so `scripts/Åsta.fountain` is CRLF on disk. That is
+      how the cloud copy got CRLF and became uneditable — see the LF invariant in
+      `cloud-architecture.md`. The server now normalises on the way in, so this
+      is defused rather than fixed; a `.gitattributes` marking `*.fountain` as
+      `text eol=lf` would stop it at the source.
+- [ ] **The preview pane does not mark suggestions.** The editor overlay and the
+      sidebar panel do, which is enough to review and resolve them. Struck-through
+      text in the rendered view is further work in the render pipeline.
+
 - [ ] **Off-site backups.** `/var/backups` and `/var/lib/postgresql` are the same
       filesystem, so the nightly dump survives a bad migration but not a lost VM
       — and `doc_state.ydoc` is the only copy of every script. An rclone push to

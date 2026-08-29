@@ -165,6 +165,34 @@ the changed span and lets the browser adjust the selection. A blunt
 `ta.value = next` would drop the caret to position 0 every time a collaborator
 typed.
 
+### LF is the only line ending the shared text may hold
+
+Not a style preference — an invariant forced by the editor, and the one place
+where keeping the textarea has a sharp edge.
+
+A `<textarea>` normalises its value: the HTML spec turns CR and CRLF into LF,
+both on assignment and through `setRangeText`. So a CRDT holding CRLF describes
+a document the browser can never reproduce. The two then disagree about how many
+characters exist, and **every offset crossing between them is wrong by the
+number of line breaks above it** — a typed edit, a comment anchor, a suggestion
+range. The edit lands silently in the wrong place; nothing throws.
+
+A script imported from a Windows `.fountain` file held 1430 CRLF pairs. Typing
+`ganske ` before `avventende` wrote `Roligganske e avventende`, two characters
+early — one per CRLF above that point. Deeper in the document the error passed a
+thousand characters. A document created in the app was unaffected, which is why
+this looked like a collaboration fault rather than a text fault.
+
+`docs.js` keeps CRLF out at every point where whole text enters a document
+(import, restore, seeding); `collab.js` heals documents seeded before that gate
+existed. Deleting a CR is safe from any client: two of them delete the same CRDT
+item, which merges to one deletion rather than two.
+
+Comment and suggestion anchors made this hard to see. The error is applied
+twice — once recording a browser offset into the CRDT, once reading it back —
+so the marks *looked* correctly placed as long as nobody edited. Only the stored
+quote gave it away, by starting mid-word.
+
 ### app.js is not modified
 
 `cloud.js` wraps four globals from outside — `markDirty`, `applySmartUppercase`,
@@ -293,9 +321,21 @@ All suites run with **no database server and no network**: `db.js` has a
 | Suite | Count | What it actually exercises |
 |---|---|---|
 | `tests/fountain/test_python.py` | 16 | the Fountain parser (pre-existing; unchanged) |
-| `server-node/test/smoke.js` | 38 (42 with the sidecar) | the real Express app on real Postgres: schema, auth, the whole access-control matrix, history semantics, rename/delete, CRDT storage, and — with `EXPORT_SERVICE_URL` set — real PDF/FDX rendering and `.fdx` import |
-| `server-node/test/collab.js` | 12 | the real Hocuspocus server over real WebSockets: auth rejection (no token / forged / no access / unknown doc), propagation between two clients, convergence of concurrent edits, server-enforced read-only, persistence, and reload after a restart |
+| `server-node/test/smoke.js` | 49 (53 with the sidecar) | the real Express app on real Postgres: schema, auth, the whole access-control matrix, history semantics, rename/delete, CRDT storage, and — with `EXPORT_SERVICE_URL` set — real PDF/FDX rendering and `.fdx` import |
+| `server-node/test/collab.js` | 14 | the real Hocuspocus server over real WebSockets: auth rejection (no token / forged / no access / unknown doc), propagation between two clients, convergence of concurrent edits, server-enforced read-only, persistence, and reload after a restart |
 | `collab/test-binding.mjs` | 11 | the diff (3000 fuzzed edits) and CRDT convergence, including same-offset concurrent inserts and per-user undo |
+| `collab/test-twoclient.mjs` | 19 | two real clients through the real `collab.js`: `attach()`, the observer and `applyRemote()` writing to a textarea, plus suggestions crossing between them and CRLF documents |
+| `collab/test-comments.mjs` | 16 | anchoring, orphan detection, threads, permissions, and two clients commenting and replying at once |
+| `collab/test-suggestions.mjs` | 21 | that each kind of accept and reject leaves exactly the right text, including after an anchor shift, when orphaned, in bulk, and while correcting yourself mid-suggestion |
+
+**A gap worth remembering.** For a while `test-binding.mjs` was the only binding
+coverage, and it re-implements the sync by hand against raw `Y.Doc`s. That left
+`attach()`, the `ytext` observer and `applyRemote()` — the path the app actually
+runs — untested, which is exactly where the CRLF bug lived. Worse, the first
+version of `test-twoclient.mjs` did not reproduce it either: its fake textarea
+stored whatever it was given. A fake that does not normalise newlines is not a
+textarea, and that difference *was* the bug. Fidelity in the fake was what
+turned an unreproducible report into a failing test.
 
 Independently checked: the export sidecar's output is **byte-identical** to
 calling the library directly, and FDX round-trips losslessly across all 148 core
