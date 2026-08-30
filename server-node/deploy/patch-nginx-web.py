@@ -87,7 +87,12 @@ def main() -> int:
         return 1
 
     stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    backup = LIVE.with_suffix(f".bak-{stamp}")
+    # APPENDED, not with_suffix(): the file is named for a domain, so its "last
+    # suffix" is the .no of lektorensrud.no, and with_suffix() ate it - the
+    # first run left a backup called faaglarna.lektorensrud.bak-<stamp>. It was
+    # a complete and correct copy, and inert since nginx reads sites-enabled
+    # only, but a file in sites-available should look like what it is.
+    backup = LIVE.with_name(LIVE.name + f".bak-{stamp}")
     shutil.copy2(LIVE, backup)
     LIVE.write_text(text, encoding="utf-8")
     print(f"  backup: {backup}")
