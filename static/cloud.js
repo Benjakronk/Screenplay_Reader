@@ -70,6 +70,10 @@ window.Cloud = (function () {
   }
   function active()  { return signedIn; }
 
+  // Whether this account may invite someone who has no account yet. The server
+  // enforces it; this only decides what is worth showing.
+  function isAdmin() { return !!(user && user.isAdmin); }
+
   // wss://<host>/collab — derived from the API origin so there is one setting.
   function wsUrl() {
     return base.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + '/collab';
@@ -508,8 +512,8 @@ window.Cloud = (function () {
           <p class="cloud-hint">${invite
             ? 'Pick a password and your account is ready.'
             : 'Sign in to reach your scripts from anywhere and write together in real time.'}</p>
-          <label class="cloud-field">Email<input id="cloud-email" type="email" autocomplete="username" /></label>
-          ${invite ? '<label class="cloud-field">Your name<input id="cloud-name" type="text" /></label>' : ''}
+          <label class="cloud-field">Email<input id="cloud-email" type="email" maxlength="50" autocomplete="username" /></label>
+          ${invite ? '<label class="cloud-field">Your name<input id="cloud-name" type="text" maxlength="50" /></label>' : ''}
           <label class="cloud-field">Password<input id="cloud-pw" type="password"
             autocomplete="${invite ? 'new-password' : 'current-password'}" /></label>
           <p id="cloud-error" class="cloud-error hidden"></p>
@@ -644,7 +648,11 @@ window.Cloud = (function () {
                 `<button class="share-remove" data-email="${esc(c.email)}">Remove</button>`}
             </li>`).join('')}
           </ul>
-          <label class="cloud-field">Email to invite<input id="share-email" type="email" /></label>
+          <label class="cloud-field">Person
+            <input id="share-email" type="email" list="share-people" maxlength="50"
+                   placeholder="name@example.no" autocomplete="off" />
+          </label>
+          <datalist id="share-people"></datalist>
           <label class="cloud-field">Access
             <select id="share-role">
               <option value="editor">Can edit</option>
@@ -654,9 +662,14 @@ window.Cloud = (function () {
           <p id="share-error" class="cloud-error hidden"></p>
           <p id="share-link" class="cloud-hint hidden"></p>
           <div class="modal-actions">
-            <button id="share-invite" class="ghost">Create invite link</button>
-            <button id="share-add" class="primary">Add existing user</button>
+            ${isAdmin()
+              ? '<button id="share-invite" class="ghost">Invite a new person</button>'
+              : ''}
+            <button id="share-add" class="primary">Add</button>
           </div>
+          ${isAdmin() ? '' :
+            '<p class="cloud-hint">You can add anyone who already has an account. ' +
+            'To bring in someone new, ask an administrator to invite them.</p>'}
         </div>
       </div>`);
 
@@ -675,9 +688,21 @@ window.Cloud = (function () {
       } catch (e) { fail(e.message); }
     };
 
+    // Everyone may add someone who already has an account, so offer the list
+    // rather than making people remember addresses. Best-effort: typing an
+    // address still works if this cannot be fetched.
+    api('/api/users').then((out) => {
+      const dl = $('share-people');
+      if (!dl || !out?.users) return;
+      dl.innerHTML = out.users.map((u) =>
+        `<option value="${esc(u.email)}">${esc(u.name || u.email)}</option>`).join('');
+    }).catch(() => { /* the field is still a plain email input */ });
+
+    // Only an administrator can bring in someone who has no account, so for
+    // anyone else the button is not there to press.
     // For someone who doesn't — a link that creates their account and grants
     // access in one step.
-    $('share-invite').onclick = async () => {
+    if (isAdmin()) $('share-invite').onclick = async () => {
       try {
         const out = await api('/api/invite', {
           method: 'POST', body: { path, email: email(), role: role() },

@@ -18,7 +18,7 @@
 
 const readline = require('readline');
 const { pool, query, init } = require('./db');
-const { hashPassword } = require('./auth');
+const { hashPassword, cleanEmail, cleanName } = require('./auth');
 
 // Reads a password without echoing it. Falls back to reading stdin when piped.
 function readSecret(prompt) {
@@ -45,11 +45,21 @@ function readSecret(prompt) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  // --admin anywhere in the arguments. An administrator is the only one who can
+  // invite a NEW person into the system; everyone else may add people who
+  // already have an account. Promotion is deliberately a shell operation on the
+  // server rather than something reachable from the app.
+  const argv = process.argv.slice(2);
+  const admin = argv.includes('--admin');
+  const args = argv.filter((a) => a !== '--admin');
+
   const email = args[0];
   if (!email) {
-    console.error('usage: node create-user.js <email> ["Display Name"]        (prompts for the password)');
-    console.error('       node create-user.js <email> <password> ["Display Name"]');
+    console.error('usage: node create-user.js <email> ["Display Name"] [--admin]   (prompts for the password)');
+    console.error('       node create-user.js <email> <password> ["Display Name"] [--admin]');
+    console.error('');
+    console.error('  --admin  may invite new people. Passing it promotes an existing account;');
+    console.error('           leaving it off never demotes one.');
     process.exit(2);
   }
 
@@ -66,8 +76,12 @@ async function main() {
     console.error('no password given');
     process.exit(2);
   }
-  if (!email.includes('@')) {
-    console.error('that does not look like an email address');
+  let normalisedEmail, normalisedName;
+  try {
+    normalisedEmail = cleanEmail(email);
+    normalisedName = cleanName(name);
+  } catch (err) {
+    console.error(err.message);
     process.exit(2);
   }
   if (password.length < 10) {
@@ -76,19 +90,23 @@ async function main() {
   }
 
   await init();
-  const normalised = email.trim().toLowerCase();
+  const normalised = normalisedEmail;
   const hash = await hashPassword(password);
 
   const { rows } = await query(
-    `INSERT INTO users (email, name, password_hash, created_at)
-     VALUES ($1,$2,$3,$4)
-     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash
-     RETURNING id, (xmax = 0) AS created`,
-    [normalised, (name || '').trim(), hash, Date.now()]);
+    `INSERT INTO users (email, name, password_hash, created_at, is_admin)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (email) DO UPDATE SET
+       password_hash = EXCLUDED.password_hash,
+       -- --admin promotes; leaving it off never demotes, so a routine password
+       -- reset cannot quietly strip someone's administrator rights.
+       is_admin = users.is_admin OR EXCLUDED.is_admin
+     RETURNING id, is_admin, (xmax = 0) AS created`,
+    [normalised, normalisedName, hash, Date.now(), admin]);
 
-  console.log(rows[0].created
-    ? `created ${normalised} (${rows[0].id})`
-    : `reset the password for ${normalised} (${rows[0].id})`);
+  const what = rows[0].created ? 'created' : 'reset the password for';
+  console.log(`${what} ${normalised} (${rows[0].id})` +
+              (rows[0].is_admin ? ' - ADMINISTRATOR, may invite new people' : ''));
   await pool.end();
 }
 

@@ -178,6 +178,15 @@ async function init() {
   // Added after the table existed, so it is a separate idempotent ALTER —
   // editing the CREATE TABLE above would do nothing to a live table.
   await query(`ALTER TABLE doc_versions ADD COLUMN IF NOT EXISTS state_vector BYTEA;`);
+
+  // WHO MAY BRING A NEW PERSON INTO THE SYSTEM.
+  //
+  // Sharing a document with an EXISTING account is an ordinary thing an owner
+  // does. Creating an invite is different in kind: it mints a credential that
+  // turns into an account, on an install with no public registration. That is
+  // an administrator's decision, not a document owner's, so it is a property of
+  // the person rather than of any document.
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;`);
 }
 
 module.exports = { pool, query, init, _setDriver };

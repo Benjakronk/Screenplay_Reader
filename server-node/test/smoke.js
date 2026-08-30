@@ -83,9 +83,11 @@ async function main() {
   section('accounts');
   const now = Date.now();
   const benHash = await auth.hashPassword('a-long-enough-password');
+  // Ben is the administrator — the first account, as created by create-user.js
+  // with --admin. Only an administrator may invite someone who has no account.
   const { rows: [ben] } = await db.query(
-    `INSERT INTO users (email, name, password_hash, created_at)
-     VALUES ('ben@example.no','Ben',$1,$2) RETURNING id`, [benHash, now]);
+    `INSERT INTO users (email, name, password_hash, created_at, is_admin)
+     VALUES ('ben@example.no','Ben',$1,$2,TRUE) RETURNING id`, [benHash, now]);
 
   let benToken = '';
   await test('login with the right password issues a token', async () => {
@@ -427,6 +429,103 @@ async function main() {
       const f = await GET('/api/file?path=' + encodeURIComponent(r.data.path), { as: benToken });
       assert.match(f.data.content, /INT\. SALOON - NATT/);
       assert.match(f.data.content, /SARA/);
+    });
+  }
+
+  section('who may bring in a new person');
+  {
+    // Alex has an account but is not an administrator. Adding someone who
+    // already exists is an ordinary owner's job; minting a credential that
+    // becomes a NEW account is not.
+    await test('an ordinary user cannot create an invite', async () => {
+      const r = await POST('/api/invite', { email: 'stranger@example.no' }, { as: alexToken });
+      assert.equal(r.status, 403);
+      assert.match(r.data.error, /administrator/i);
+    });
+    await test('an administrator can', async () => {
+      const r = await POST('/api/invite', { email: 'stranger@example.no' }, { as: benToken });
+      assert.equal(r.status, 200, r.data && r.data.error);
+      assert.ok(r.data.token);
+    });
+    await test('/api/me says which you are', async () => {
+      assert.equal((await GET('/api/me', { as: benToken })).data.user.isAdmin, true);
+      assert.equal((await GET('/api/me', { as: alexToken })).data.user.isAdmin, false);
+    });
+    await test('an ordinary user is told to ask, not to invite', async () => {
+      // Alex owns this one, so the share is allowed to get as far as looking
+      // the address up. The advice must differ by who is asking: telling an
+      // ordinary user to "send an invite instead" points at a door they cannot
+      // open.
+      await POST('/api/new', { path: 'Alex.fountain' }, { as: alexToken });
+      const r = await POST('/api/share',
+        { path: 'Alex.fountain', email: 'nobody@example.no', role: 'editor' },
+        { as: alexToken });
+      assert.equal(r.status, 404);
+      assert.match(r.data.error, /ask an administrator/);
+    });
+    await test('an administrator is told they can invite', async () => {
+      // Its own document: by this point the earlier sections have renamed and
+      // deleted the ones they made.
+      await POST('/api/new', { path: 'AdminShare.fountain' }, { as: benToken });
+      const r = await POST('/api/share',
+        { path: 'AdminShare.fountain', email: 'nobody@example.no', role: 'editor' },
+        { as: benToken });
+      assert.equal(r.status, 404);
+      assert.match(r.data.error, /send an invite/);
+    });
+    await test('everyone can list existing accounts to share with', async () => {
+      const r = await GET('/api/users', { as: alexToken });
+      assert.equal(r.status, 200);
+      assert.ok(r.data.users.some((u) => u.email === 'ben@example.no'));
+      assert.ok(!r.data.users.some((u) => u.email === 'alex@example.no'), 'not yourself');
+    });
+  }
+
+  section('input rules');
+  {
+    const long = 'x'.repeat(45) + '@example.no';        // 56 characters
+    await test('an over-long email is refused', async () => {
+      const r = await POST('/api/invite', { email: long }, { as: benToken });
+      assert.equal(r.status, 400);
+      assert.match(r.data.error, /50 characters/);
+    });
+    await test('a malformed email is refused', async () => {
+      const r = await POST('/api/invite', { email: 'not-an-address' }, { as: benToken });
+      assert.equal(r.status, 400);
+    });
+    await test('login rejects a malformed address as a wrong password', async () => {
+      // Same message and status as a real failure: this must not become a way
+      // to probe which addresses are valid or exist.
+      const r = await POST('/api/login', { email: 'not-an-address', password: 'x' });
+      assert.equal(r.status, 401);
+      assert.match(r.data.error, /wrong email or password/);
+    });
+    await test('an enormous password is refused without hashing it', async () => {
+      const r = await POST('/api/login',
+        { email: 'ben@example.no', password: 'x'.repeat(100000) });
+      assert.equal(r.status, 401);
+    });
+    await test('an over-long display name is refused', async () => {
+      const inv = await POST('/api/invite', { email: 'named@example.no' }, { as: benToken });
+      const r = await POST('/api/accept-invite', {
+        token: inv.data.token, email: 'named@example.no',
+        password: 'a-long-enough-password', name: 'n'.repeat(51),
+      });
+      assert.equal(r.status, 400);
+      assert.match(r.data.error, /50 characters/);
+    });
+    await test('a name is stripped of control characters and stored trimmed', async () => {
+      const inv = await POST('/api/invite', { email: 'tidy@example.no' }, { as: benToken });
+      const r = await POST('/api/accept-invite', {
+        token: inv.data.token, email: '  TIDY@Example.NO ',
+        password: 'a-long-enough-password',
+        name: '  Ann‮  Berg\t',
+      });
+      assert.equal(r.status, 200, r.data && r.data.error);
+      const { rows } = await db.query(
+        "SELECT email, name FROM users WHERE email='tidy@example.no'");
+      assert.equal(rows[0].email, 'tidy@example.no', 'address normalised');
+      assert.equal(rows[0].name, 'Ann Berg', 'name cleaned');
     });
   }
 

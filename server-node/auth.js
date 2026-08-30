@@ -81,7 +81,7 @@ async function userForToken(token) {
   if (!token) return null;
   const h = tokenHash(token);
   const { rows } = await query(
-    `SELECT u.id, u.email, u.name, s.expires_at
+    `SELECT u.id, u.email, u.name, u.is_admin, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1`, [h]);
   const row = rows[0];
@@ -90,7 +90,16 @@ async function userForToken(token) {
     await query('DELETE FROM sessions WHERE token_hash=$1', [h]);
     return null;
   }
-  return { id: row.id, email: row.email, name: row.name };
+  return { id: row.id, email: row.email, name: row.name, isAdmin: !!row.is_admin };
+}
+
+// Express middleware: 403 unless the signed-in user is an administrator. Runs
+// after requireUser, which is what puts req.user there.
+function requireAdmin(req, res, next) {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ error: 'only an administrator can invite new people' });
+  }
+  next();
 }
 
 function bearerToken(req) {
@@ -152,11 +161,60 @@ function atLeast(role, needed) {
   return (ROLE_RANK[role] || 0) >= (ROLE_RANK[needed] || 99);
 }
 
+// ---------- input rules ----------
+//
+// One place, so every endpoint that takes an address or a name applies the same
+// rules. Values reach the database as bound parameters, so this is not about
+// SQL injection — it is about what may become an ACCOUNT: a name is shown to
+// other people, and an address is a login credential and a lookup key.
+//
+// Bounded first. Without a cap, an 8 MB string (the body limit) reaches
+// password hashing and the query planner before anything rejects it.
+const MAX_EMAIL = 50;
+const MAX_NAME = 50;
+
+// Deliberately narrow rather than RFC-complete: one @, no spaces, a dot in the
+// domain. It rejects addresses that are legal but that nobody here has, and
+// that is the safer direction for something that identifies an account.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Control characters, including the bidirectional overrides that can make one
+// display name render as another. Stripped rather than rejected: they are never
+// deliberate in a person's name.
+const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+// Rejections here are the caller's fault, not the server's, so they carry the
+// status the API should answer with. fail() honours it; without that they all
+// came back as 500.
+function badInput(msg) {
+  const e = new Error(msg);
+  e.status = 400;
+  return e;
+}
+
+// Normalises an address, or throws with a message meant for the person typing.
+function cleanEmail(raw) {
+  const s = String(raw ?? '').replace(CONTROL_RE, '').trim().toLowerCase();
+  if (!s) throw badInput('an email address is required');
+  if (s.length > MAX_EMAIL) throw badInput(`email must be ${MAX_EMAIL} characters or fewer`);
+  if (!EMAIL_RE.test(s)) throw badInput('that does not look like an email address');
+  return s;
+}
+
+// A display name is optional and free-form; it is only ever shown, never
+// matched on, so it is trimmed and bounded rather than validated.
+function cleanName(raw) {
+  const s = String(raw ?? '').replace(CONTROL_RE, '').replace(/\s+/g, ' ').trim();
+  if (s.length > MAX_NAME) throw badInput(`name must be ${MAX_NAME} characters or fewer`);
+  return s;
+}
+
 module.exports = {
   SESSION_TTL_MS, INVITE_TTL_MS,
   hashPassword, verifyPassword,
   newToken, tokenHash,
-  createSession, destroySession, userForToken, bearerToken, requireUser,
+  createSession, destroySession, userForToken, bearerToken, requireUser, requireAdmin,
   createInvite, inviteForToken,
   roleFor, atLeast,
+  cleanEmail, cleanName, MAX_EMAIL, MAX_NAME,
 };

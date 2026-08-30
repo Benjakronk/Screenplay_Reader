@@ -155,8 +155,12 @@ function buildTree(entries) {
 // frontend's conflict bookkeeping behaves identically.
 const toMtime = (ms) => Number(ms) / 1000;
 
+// An error that names its own status wins: the input rules in auth.js mark
+// their rejections 400, which would otherwise surface as 500 from the catch-all
+// at the bottom of every handler.
 function fail(res, err, status = 400) {
-  res.status(status).json({ error: err && err.message ? err.message : String(err) });
+  const code = Number(err && err.status) || status;
+  res.status(code).json({ error: err && err.message ? err.message : String(err) });
 }
 
 // ---------- probes ----------
@@ -179,8 +183,17 @@ app.get('/api/ready', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    // Bounded and normalised before it reaches the database or the KDF - see
+    // the input rules in auth.js. A malformed address is rejected with the same
+    // message as a wrong password, so this does not become a way to ask whether
+    // an account exists.
+    let email;
+    try { email = auth.cleanEmail(req.body?.email); }
+    catch { return res.status(401).json({ error: 'wrong email or password' }); }
     const password = String(req.body?.password || '');
+    if (password.length > 200) {
+      return res.status(401).json({ error: 'wrong email or password' });
+    }
     const { rows } = await query(
       'SELECT id, email, name, password_hash FROM users WHERE email=$1', [email]);
     const user = rows[0];
@@ -203,7 +216,21 @@ app.post('/api/logout', async (req, res) => {
 });
 
 app.get('/api/me', auth.requireUser, (req, res) => {
-  res.json({ user: req.user });
+  res.json({ user: req.user });     // includes isAdmin, which the UI keys off
+});
+
+// Everyone who already has an account, for the share dialog's picker. Ordinary
+// users may add EXISTING people to a document, so they need to know who exists;
+// addresses are already visible to anyone shared with, and this install is a
+// closed set of invited collaborators.
+app.get('/api/users', auth.requireUser, async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT email, name FROM users WHERE id <> $1
+        ORDER BY lower(COALESCE(NULLIF(name, ''), email))`,
+      [req.user.id]);
+    res.json({ users: rows });
+  } catch (err) { fail(res, err, 500); }
 });
 
 // Change your own password. Requires the current one even though the session is
@@ -241,9 +268,9 @@ app.post('/api/password', auth.requireUser, async (req, res) => {
 
 // Create an invite. Optionally scoped to one document, which pre-grants access
 // so "share this script with Alex" is a single link.
-app.post('/api/invite', auth.requireUser, async (req, res) => {
+app.post('/api/invite', auth.requireUser, auth.requireAdmin, async (req, res) => {
   try {
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    const email = auth.cleanEmail(req.body?.email);
     const role = req.body?.role === 'viewer' ? 'viewer' : 'editor';
     let docId = null;
     if (req.body?.path) {
@@ -276,10 +303,9 @@ app.post('/api/accept-invite', async (req, res) => {
     const inv = await auth.inviteForToken(req.body?.token);
     if (!inv) return res.status(404).json({ error: 'invalid or expired invite' });
 
-    const email = String(req.body?.email || inv.email || '').trim().toLowerCase();
+    const email = auth.cleanEmail(req.body?.email || inv.email);
     const password = String(req.body?.password || '');
-    const name = String(req.body?.name || '').trim();
-    if (!email.includes('@')) return res.status(400).json({ error: 'a valid email is required' });
+    const name = auth.cleanName(req.body?.name);
     if (password.length < 10) {
       return res.status(400).json({ error: 'password must be at least 10 characters' });
     }
@@ -321,11 +347,17 @@ app.post('/api/share', auth.requireUser, async (req, res) => {
     if (!auth.atLeast(doc.role, 'owner')) {
       return res.status(403).json({ error: 'only the owner can share' });
     }
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    const email = auth.cleanEmail(req.body?.email);
     const role = req.body?.role === 'viewer' ? 'viewer' : 'editor';
     const { rows } = await query('SELECT id FROM users WHERE email=$1', [email]);
     if (!rows[0]) {
-      return res.status(404).json({ error: 'no account with that email – send an invite instead' });
+      // Ordinary users add people who already have accounts; only an
+      // administrator can bring someone new in.
+      return res.status(404).json({
+        error: req.user.isAdmin
+          ? 'no account with that email - send an invite instead'
+          : 'no account with that email - ask an administrator to invite them',
+      });
     }
     if (rows[0].id === req.user.id) return res.status(400).json({ error: 'that is you' });
     await query(
@@ -359,7 +391,7 @@ app.post('/api/unshare', auth.requireUser, async (req, res) => {
     if (!auth.atLeast(doc.role, 'owner')) {
       return res.status(403).json({ error: 'only the owner can change sharing' });
     }
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    const email = auth.cleanEmail(req.body?.email);
     await query(
       `DELETE FROM doc_access WHERE doc_id=$1
          AND user_id = (SELECT id FROM users WHERE email=$2)
