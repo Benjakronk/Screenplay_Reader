@@ -4809,7 +4809,15 @@ function overflowMenuItems() {
     if (el.tagName === 'BUTTON') {
       out.push({ label: overflowLabel(el), hint: overflowHint(el),
                  disabled: el.disabled, action: () => el.click() });
+      continue;
     }
+
+    // Something that is not a control at all — the connection status, the
+    // collaborator chips. It still has to appear, as a line you cannot press,
+    // or it would simply cease to exist when the bar ran out of room. That is
+    // the whole rule this menu exists to keep.
+    const label = el.dataset.overflowLabel || (el.textContent || '').trim();
+    if (label) out.push({ label, disabled: true, action: () => {} });
   }
   return out;
 }
@@ -5027,7 +5035,15 @@ function wire() {
   document.addEventListener('mousedown', (ev) => {
     if (!$('ctx-menu').contains(ev.target)) hideContextMenu();
   });
-  document.addEventListener('scroll', hideContextMenu, true);
+  // A menu anchored to the page must close when the page moves under it — but
+  // the menu now scrolls on its own when it is taller than the screen, and this
+  // listener is on the capture phase, so that scroll reached it too. Dragging
+  // the menu to reach the entries further down closed it instead.
+  document.addEventListener('scroll', (ev) => {
+    const menu = $('ctx-menu');
+    if (menu && ev.target instanceof Node && menu.contains(ev.target)) return;
+    hideContextMenu();
+  }, true);
 
   // Global hotkey dispatcher (covers editor and page focus).
   document.addEventListener('keydown', onGlobalKeydown);

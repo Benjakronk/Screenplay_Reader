@@ -241,8 +241,13 @@ window.Cloud = (function () {
     const label = s === 'connected' || s === 'synced' ? 'Live'
       : s === 'connecting' ? 'Connecting…'
       : 'Offline';
+    const changed = statusEl.textContent !== label;
     statusEl.textContent = label;
     statusEl.className = 'cloud-status ' + (label === 'Live' ? 'live' : 'down');
+    // "Connecting…" is wider than "Live", so the bar has to remeasure — but
+    // only when the word actually changed, since this is called on every
+    // socket event.
+    if (changed && typeof window.layoutTopbar === 'function') window.layoutTopbar();
     statusEl.title = label === 'Live'
       ? 'Connected — edits sync as you type'
       : 'Not connected. Your edits are kept and will sync when the connection returns.';
@@ -260,6 +265,13 @@ window.Cloud = (function () {
       peersEl.appendChild(chip);
     }
     peersEl.classList.toggle('hidden', peers.length === 0);
+    // A row of coloured initials means nothing as a line in the overflow menu,
+    // so it says who they are instead.
+    peersEl.dataset.overflowLabel = peers.length
+      ? 'Also editing: ' + peers.map((p) => p.name || 'Someone').join(', ')
+      : '';
+    // Chips appearing or leaving changes the width of the bar.
+    if (typeof window.layoutTopbar === 'function') window.layoutTopbar();
   }
 
   // Adds the account button, connection pill and collaborator chips to the
@@ -289,10 +301,24 @@ window.Cloud = (function () {
     acct.title = `Signed in as ${user?.email || 'unknown'}`;
     acct.onclick = openAccountDialog;
 
+    // THESE JOIN THE OVERFLOW SYSTEM LIKE EVERYTHING ELSE. Injected here rather
+    // than written in index.html, they had no data-prio, so layoutTopbar did
+    // not know they existed and simply let them run off the edge of a phone —
+    // Share cut in half and the account initial past the screen.
+    //
+    // Dropped highest first: the status and the collaborator chips are things
+    // to glance at, Share and the account are things to press.
+    statusEl.dataset.prio = '92';
+    peersEl.dataset.prio  = '90';
+    shareBtn.dataset.prio = '33';
+    acct.dataset.prio     = '22';
+
     actions.insertBefore(peersEl, actions.firstChild);
     actions.insertBefore(statusEl, actions.firstChild);
     actions.appendChild(shareBtn);
     actions.appendChild(acct);
+    // The bar just gained four controls; remeasure what still fits.
+    if (typeof window.layoutTopbar === 'function') window.layoutTopbar();
 
     // app.js binds this to importFdx, which only understands Final Draft XML.
     // Widen it so a plain .fountain file can be brought in too.
