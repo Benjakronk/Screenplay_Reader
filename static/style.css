@@ -1412,3 +1412,58 @@ body.suggesting .editor { box-shadow: inset 0 2px 0 var(--accent); }
   color: var(--muted); margin-top: 0.3rem;
 }
 .suggest-actions .suggest-dismiss { flex: 0 0 auto; }
+
+/* ---------- continuous reflow (phones) ----------
+   A screenplay page is a physical sheet, and fitting an 8.5-inch sheet across a
+   375px screen means about 6px type: it fits, and nobody can read it. Below the
+   phone breakpoint the sheet is dropped instead and the script runs as one
+   column at full size — the trade the format itself forces, since the page
+   geometry and readable type cannot both survive that width.
+
+   A STYLING VARIANT, NOT A SECOND RENDERER. The same pagination and the same
+   DOM; the sheet stops being drawn and the page-relative indents stop being
+   applied. Rotating a phone to landscape passes the breakpoint and brings the
+   real pages back, which is the escape hatch when page count is what matters. */
+
+body.reflow .script {
+  align-items: stretch;
+  padding: 0.5rem 0.85rem 2rem;
+  gap: 0;
+}
+body.reflow .page {
+  width: 100%; min-height: 0;
+  background: none; box-shadow: none;
+}
+body.reflow .page-content { padding: 0 0 1.1rem; }
+
+/* The page boundary survives as a rule and a number. A screenwriter still needs
+   to know what page a scene lands on; what they do not need on a phone is the
+   paper it would be printed on. */
+body.reflow .page + .page { border-top: 1px solid var(--rule); }
+body.reflow .page-number {
+  position: static;
+  display: block; text-align: center;
+  padding: 0.9rem 0 0.5rem;
+  font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+body.reflow .page:first-child .page-number { padding-top: 0.2rem; }
+
+/* Indents are written inline by renderBlock, in ch measured against an 8.5-inch
+   sheet — a character cue sits 22ch in, which is over half a phone screen. The
+   inline style is left alone (it is the page geometry, and it is correct) and
+   overridden here, which is what !important is for: losing to an inline style
+   is precisely the situation. The shape of the format is kept, at a scale that
+   fits: cues stand out, dialogue sits in from action. */
+body.reflow .elem { margin-left: 0 !important; max-width: none; }
+body.reflow .elem-character { font-weight: 700; margin-left: 0 !important; }
+body.reflow .elem-parenthetical,
+body.reflow .elem-dialogue { margin-left: 2ch !important; max-width: none; }
+body.reflow .elem-scene { margin-top: 1.4em; }
+
+/* Two dialogue columns do not fit; they become two blocks, in order. */
+body.reflow .elem-dual { display: block; }
+body.reflow .elem-dual-col + .elem-dual-col { margin-top: 1em; }
+
+/* A title page has nothing to centre on when there is no sheet. */
+body.reflow .page-title .page-content { padding-top: 1.5rem; }

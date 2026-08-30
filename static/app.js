@@ -117,7 +117,22 @@ function toggleSidebar() { setSidebarOpen(!getSidebarOpen()); }
 // person set it in. Not saved back, so their desktop stays as they left it.
 function applyInitialLayout() {
   if (isNarrow()) applySidebar(false);
-  else applyInitialLayout();
+  else applySidebar(getSidebarOpen());
+  applyReflow();
+}
+
+// Below the phone breakpoint the rendered view drops the page sheet and runs as
+// one continuous column at full size. Everything about how it looks — and why —
+// is in the reflow block in style.css; this only decides when.
+function applyReflow() {
+  const on = isNarrow();
+  document.body.classList.toggle('reflow', on);
+  if (on) {
+    // The paged view's fit-to-width shrink is the very thing reflow exists to
+    // avoid, so drop anything it left behind.
+    const script = document.querySelector('.script');
+    if (script) script.style.fontSize = '';
+  }
 }
 
 const $ = (id) => document.getElementById(id);
@@ -911,6 +926,10 @@ function applyPreviewMeasure() {
   const pane = document.querySelector('.pane-view');
   const page = script && script.querySelector('.page');
   if (!script || !pane || !page) return;
+
+  // Reflow has no sheet to fit inside, and shrinking the type is the thing it
+  // exists to avoid.
+  if (document.body.classList.contains('reflow')) { script.style.fontSize = ''; return; }
 
   const chars = parseFloat(getComputedStyle(page).getPropertyValue('--page-w-ch'));
   if (!chars) return;
@@ -5022,7 +5041,8 @@ function wire() {
 
 wire();
 applyTheme(getTheme());
-applySidebar(getSidebarOpen());
+// Sidebar state and the reflow decision together, so a phone starts right.
+applyInitialLayout();
 applyZoom(getZoom());
 applyMarkupToggle(getShowMarkup());
 applySpellcheck();
