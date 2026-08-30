@@ -866,12 +866,12 @@ function status(msg, isError) {
 // all read that padding. Resolving the number here leaves nothing to interpret.
 const MEASURE_CH = 80;
 
-// Width of one character in the editor's own font, measured rather than assumed
+// Width of one character in an element's own font, measured rather than assumed
 // — the fallback font is not necessarily the one we asked for, and the size
 // tracks the zoom.
 let _chProbe = null;
-function editorCharWidth(ta) {
-  const cs = getComputedStyle(ta);
+function charWidthOf(el) {
+  const cs = getComputedStyle(el);
   if (!_chProbe) {
     _chProbe = document.createElement('span');
     _chProbe.setAttribute('aria-hidden', 'true');
@@ -885,6 +885,55 @@ function editorCharWidth(ta) {
   _chProbe.style.letterSpacing = cs.letterSpacing;
   _chProbe.textContent = '0'.repeat(100);
   return (_chProbe.getBoundingClientRect().width / 100) || 8;
+}
+const editorCharWidth = charWidthOf;
+
+// THE PAGE NEVER EXCEEDS ITS PANE.
+//
+// A screenplay page is a physical sheet: 85 characters wide, sized in ch so it
+// scales with the type. At 12pt that is around 816px, which is fine beside a
+// preview pane on a desktop and runs clean off the side of a phone.
+//
+// The page cannot simply be given a max-width — its margins and indents are in
+// ch too, so a narrower box would just push its own contents out of it. What
+// has to shrink is the TYPE, and then the whole sheet follows: margins,
+// indents, dialogue column and all, still in proportion.
+//
+// Measured rather than computed from a constant. The width of a page in pixels
+// is (characters × the font's advance width), and that advance is a property of
+// whichever font actually loaded — assuming Courier's 0.6em would be a guess
+// that fails silently on the fallback.
+//
+// A cap, not an override: min() leaves the zoom setting alone until it would
+// overflow, so zooming out still works and only zooming in stops at the edge.
+function applyPreviewMeasure() {
+  const script = document.querySelector('.script');
+  const pane = document.querySelector('.pane-view');
+  const page = script && script.querySelector('.page');
+  if (!script || !pane || !page) return;
+
+  const chars = parseFloat(getComputedStyle(page).getPropertyValue('--page-w-ch'));
+  if (!chars) return;
+
+  // Measured on .script's own box rather than the pane's: clientWidth includes
+  // padding, so taking .script's and subtracting its padding accounts for the
+  // pane's padding too, without naming either.
+  const cs = getComputedStyle(script);
+  const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const avail = script.clientWidth - padX - 2;    // a couple of px for the shadow
+  if (avail <= 0) return;
+
+  // Advance width per px of font-size, from the font in use.
+  script.style.fontSize = '';                     // measure at the unconstrained size
+  const base = parseFloat(getComputedStyle(script).fontSize) || 16;
+  const perPx = charWidthOf(script) / base;
+  if (!perPx) return;
+
+  const fit = avail / (chars * perPx);
+  const size = Math.min(base, fit);
+  // Leave it alone when it already fits: an inline font-size would otherwise
+  // freeze the zoom setting at whatever it was when this last ran.
+  if (size < base - 0.01) script.style.fontSize = size.toFixed(2) + 'px';
 }
 
 function applyEditorMeasure() {
@@ -908,10 +957,11 @@ function applyEditorMeasure() {
   return true;
 }
 
-// Re-measure and redraw everything anchored into the source. Called when the
+// Re-measure both panes and redraw everything anchored into them. Called when a
 // pane's width or the type size changes — both move where the text wraps, which
-// moves every mark drawn over it.
+// moves every mark drawn over it, and both decide whether a page still fits.
 function relayoutEditor() {
+  applyPreviewMeasure();
   const moved = applyEditorMeasure();
   invalidateAnchorTops();
   if (!moved) return;
@@ -4747,8 +4797,9 @@ if (typeof ResizeObserver === 'function') {
   // sidebar collapsing, the panes toggling, the first layout at boot. Watching
   // the pane catches all of them. Padding sits INSIDE the pane, so setting it
   // cannot resize what is being observed.
-  const pane = document.querySelector('.pane-edit');
-  if (pane) {
+  for (const sel of ['.pane-edit', '.pane-view']) {
+    const pane = document.querySelector(sel);
+    if (!pane) continue;
     new ResizeObserver(() => {
       try { relayoutEditor(); } catch { /* before the app has state */ }
     }).observe(pane);
