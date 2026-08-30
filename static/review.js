@@ -30,8 +30,10 @@ window.Review = (function () {
     const s = (window.Suggestions && live()) ? window.Suggestions.list() : [];
     return {
       comments: c.filter((x) => !x.resolved).length,
-      suggestions: s.length,
-      total: c.filter((x) => !x.resolved).length + s.length,
+      // Open only: a resolved suggestion is a record, not something waiting
+      // on anyone.
+      suggestions: s.filter((x) => x.open !== false).length,
+      total: c.filter((x) => !x.resolved).length + s.filter((x) => x.open !== false).length,
     };
   }
 

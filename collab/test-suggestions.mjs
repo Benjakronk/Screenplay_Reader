@@ -23,6 +23,11 @@ const eq = (a, b, msg) => {
   if (x !== y) throw new Error(`${msg || 'mismatch'}\n         got      ${x}\n         expected ${y}`);
 };
 
+// Only the suggestions still awaiting a decision. Resolved ones stay in the
+// list as a record of what was decided and why, so counting everything answers
+// a different question than these tests are asking.
+const openOf = (S) => S.list().filter((s) => s.open);
+
 function makeCollab(doc, { readOnly = false } = {}) {
   return {
     active: () => true,
@@ -71,7 +76,20 @@ console.log('accept and reject leave the right text');
   test('ACCEPTING an insert keeps the text and drops the mark', () => {
     S.accept(id);
     eq(t.toString(), 'Rolige ganske avventende skritt.');
-    eq(S.list().length, 0);
+    eq(openOf(S).length, 0);
+  });
+  test('and the decision is kept, with what was proposed', () => {
+    const s = S.list()[0];
+    eq(s.status, 'accepted');
+    eq(s.resolvedBy, 'Ben');
+    eq(s.text, 'ganske ');
+  });
+  test('the accepted range no longer grows with later typing', () => {
+    // An accepted insertion stays in the document and its range end still
+    // associates rightwards, so a live reading would swallow whatever is typed
+    // next. The record is frozen at the moment it was resolved.
+    t.insert(14, 'MORE');
+    eq(S.list()[0].text, 'ganske ');
   });
 }
 {
@@ -80,7 +98,9 @@ console.log('accept and reject leave the right text');
   test('REJECTING an insert removes the text', () => {
     S.reject(id);
     eq(t.toString(), BASE + '');
-    eq(S.list().length, 0);
+    eq(openOf(S).length, 0);
+    eq(S.list()[0].status, 'rejected');
+    eq(S.list()[0].text, 'ganske ', 'the record still says what was proposed');
   });
 }
 {
@@ -94,7 +114,9 @@ console.log('accept and reject leave the right text');
   test('ACCEPTING a delete removes the text', () => {
     S.accept(id);
     eq(t.toString(), 'Rolige skritt.');
-    eq(S.list().length, 0);
+    eq(openOf(S).length, 0);
+    eq(S.list()[0].status, 'accepted');
+    eq(S.list()[0].text, 'avventende ', 'the removed words survive in the record');
   });
 }
 {
@@ -103,7 +125,8 @@ console.log('accept and reject leave the right text');
   test('REJECTING a delete keeps the text', () => {
     S.reject(id);
     eq(t.toString(), BASE);
-    eq(S.list().length, 0);
+    eq(openOf(S).length, 0);
+    eq(S.list()[0].status, 'rejected');
   });
 }
 
@@ -185,7 +208,7 @@ console.log('\nanchoring and orphans');
     const before = t.toString();
     S.accept(S.list()[0].id);
     eq(t.toString(), before);
-    eq(S.list().length, 0);
+    eq(openOf(S).length, 0);
   });
 }
 
@@ -198,7 +221,8 @@ console.log('\nresolving several at once');
   test('accept all: deletes go, inserts stay', () => {
     S.acceptAll();
     eq(t.toString(), 'two three four');
-    eq(S.list().length, 0);
+    eq(openOf(S).length, 0);
+    eq(S.list().length, 2, 'both decisions are kept');
   });
 }
 {
@@ -208,7 +232,8 @@ console.log('\nresolving several at once');
   test('reject all: deletes stay, inserts go', () => {
     S.rejectAll();
     eq(t.toString(), 'one two four');
-    eq(S.list().length, 0);
+    eq(openOf(S).length, 0);
+    eq(S.list().length, 2, 'both decisions are kept');
   });
 }
 
@@ -288,8 +313,16 @@ console.log('\na suggestion carries its own thread');
     eq(SA.list()[0].replies.map((r) => r.text),
        SB.list()[0].replies.map((r) => r.text));
   });
-  test('resolving takes the thread with it', () => {
+  test('resolving KEEPS the thread — the reasoning outlives the decision', () => {
     SA.accept(id);
+    eq(openOf(SA).length, 0);
+    const s = SA.list()[0];
+    eq(s.status, 'accepted');
+    eq(s.replies.map((r) => r.text).sort(),
+       ['Cut this?', 'It reads better without.']);
+  });
+  test('and dismissing is what finally removes it', () => {
+    SA.dismiss(SA.list()[0].id);
     eq(SA.list().length, 0);
   });
 }
@@ -347,8 +380,8 @@ console.log('\nconcurrency');
     Y.applyUpdate(B, Y.encodeStateAsUpdate(A));
     eq(A.getText('content').toString(), 'two three four');
     eq(B.getText('content').toString(), 'two three four');
-    eq(SB.list().length, 1, 'the other suggestion is untouched');
-    eq(SB.list()[0].text, 'four');
+    eq(openOf(SB).length, 1, 'the other suggestion is untouched');
+    eq(openOf(SB)[0].text, 'four');
   });
 }
 

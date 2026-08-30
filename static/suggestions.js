@@ -82,18 +82,30 @@ window.Suggestions = (function () {
       const from = decodePos(m.get('from'));
       const to = decodePos(m.get('to'));
       const ok = from != null && to != null;
+      // Suggestions recorded before outcomes were kept have no status, and
+      // every one of those that still exists is by definition unresolved.
+      const status = m.get('status') || 'open';
+      const open = status === 'open';
       return {
         id: m.get('id'),
         kind: m.get('kind'),
+        status, open,
+        resolvedBy: m.get('resolvedBy') || '',
+        resolvedAt: m.get('resolvedAt') || 0,
         from: ok ? from : 0,
         to: ok ? to : 0,
         // A suggestion whose span has been deleted out from under it has
         // nothing left to accept or reject.
         orphaned: !ok || to - from === 0,
-        // Derived from the live range, because a range can extend after it
-        // was recorded. The stored copy is only meaningful once orphaned, when
-        // there is no range left to read.
-        text: ok && to > from ? C().ytext.toString().slice(from, to) : (m.get('text') || ''),
+        // While OPEN, read from the live range: it can extend after it was
+        // recorded, and what is on screen is what will be resolved. Once
+        // RESOLVED, read the copy frozen at that moment — an accepted
+        // insertion stays in the document and keeps growing as people type on,
+        // and a removed one leaves nothing to read at all, so the live range no
+        // longer describes what was decided.
+        text: open && ok && to > from
+          ? C().ytext.toString().slice(from, to)
+          : (m.get('text') || ''),
         authorId: m.get('authorId') || '',
         authorName: m.get('authorName') || 'Someone',
         createdAt: m.get('createdAt') || 0,
@@ -190,7 +202,7 @@ window.Suggestions = (function () {
   // My own open suggestion of `kind` that already covers [from, to), if any.
   function covering(kind, from, to) {
     return list().find((s) =>
-      s.kind === kind && !s.orphaned && s.authorId === myId() &&
+      s.open && s.kind === kind && !s.orphaned && s.authorId === myId() &&
       s.from <= from && s.to >= to) || null;
   }
 
@@ -212,7 +224,7 @@ window.Suggestions = (function () {
   function recordDelete(from, to) {
     if (!live() || readOnly() || to <= from) return null;
     const touching = list().find((s) =>
-      s.kind === 'delete' && !s.orphaned && s.authorId === myId() &&
+      s.open && s.kind === 'delete' && !s.orphaned && s.authorId === myId() &&
       s.from <= to && s.to >= from);
     if (touching) {
       return extend(touching.id, Math.min(touching.from, from), Math.max(touching.to, to));
@@ -227,38 +239,57 @@ window.Suggestions = (function () {
   function pruneMyEmptyInserts() {
     if (!live() || readOnly()) return;
     for (const s of list()) {
-      if (s.kind !== 'insert' || !s.orphaned || s.authorId !== myId()) continue;
+      if (!s.open || s.kind !== 'insert' || !s.orphaned || s.authorId !== myId()) continue;
       const at = findIndex(s.id);
       if (at >= 0) C().ydoc.transact(() => arr().delete(at, 1));
     }
   }
 
-  // Resolving is only ever "keep the text" or "remove the text".
-  function resolve(id, keepText) {
+  // Resolving records the decision and KEEPS the entry. What it does to the
+  // text is only ever "keep it" or "remove it":
+  //
+  //              accept            reject
+  //   insert     keep the text     remove the text
+  //   delete     remove the text   keep the text
+  //
+  // The entry survives so the reasoning does. A suggestion carries the thread
+  // explaining why it was made, and deleting it on resolve threw that away at
+  // the exact moment it became a record of a decision. Dismiss removes one for
+  // good, when someone decides it is no longer worth keeping.
+  function resolve(id, outcome) {
     if (!live() || readOnly()) return;
     const s = list().find((x) => x.id === id);
-    const i = findIndex(id);
-    if (!s || i < 0) return;
+    const m = findMap(id);
+    if (!s || !m || !s.open) return;
+    const keepText = (s.kind === 'insert') === (outcome === 'accepted');
     C().ydoc.transact(() => {
+      // Freeze the proposal BEFORE the text moves under it — see the note on
+      // `text` in list().
+      m.set('text', s.text);
+      m.set('status', outcome);
+      m.set('resolvedBy', who());
+      m.set('resolvedById', (me() && me().id) || '');
+      m.set('resolvedAt', Date.now());
       if (!keepText && !s.orphaned && s.to > s.from) {
         C().ytext.delete(s.from, s.to - s.from);
       }
-      const at = findIndex(id);            // the delete above may have shifted it
-      if (at >= 0) arr().delete(at, 1);
     });
   }
 
-  const accept = (id) => {
-    const s = list().find((x) => x.id === id);
-    if (s) resolve(id, s.kind === 'insert');
-  };
-  const reject = (id) => {
-    const s = list().find((x) => x.id === id);
-    if (s) resolve(id, s.kind === 'delete');
-  };
+  const accept = (id) => resolve(id, 'accepted');
+  const reject = (id) => resolve(id, 'rejected');
 
-  function acceptAll() { for (const s of list()) accept(s.id); }
-  function rejectAll() { for (const s of list()) reject(s.id); }
+  // Removes a suggestion and its thread permanently. The only way anything
+  // here leaves the document.
+  function dismiss(id) {
+    if (!live() || readOnly()) return;
+    const at = findIndex(id);
+    if (at >= 0) C().ydoc.transact(() => arr().delete(at, 1));
+  }
+
+  const openOnes = () => list().filter((s) => s.open);
+  function acceptAll() { for (const s of openOnes()) accept(s.id); }
+  function rejectAll() { for (const s of openOnes()) reject(s.id); }
 
   // ---------- suggest mode ----------
 
@@ -362,7 +393,7 @@ window.Suggestions = (function () {
 
     const lh = parseFloat(getComputedStyle(ta).lineHeight) || 0;
     for (const s of list()) {
-      if (s.orphaned) continue;
+      if (s.orphaned || !s.open) continue;
       for (const r of textareaRangeRects(ta, s.from, s.to)) {
         const box = document.createElement('div');
         box.className = 'suggest-hl-box ' + s.kind;
@@ -411,20 +442,26 @@ window.Suggestions = (function () {
     panel.classList.toggle('hidden', !live() || !items.length);
     if (!live() || !items.length) return;
 
-    $('suggest-count').textContent = `(${items.length})`;
-    renderInto($('suggestions-list'));
+    // The header counts what is still waiting on someone, not the archive.
+    $('suggest-count').textContent = `(${renderInto($('suggestions-list'))})`;
   }
 
   function itemEl(s) {
     const el = document.createElement('div');
-    el.className = 'suggest-item ' + s.kind + (s.orphaned ? ' orphaned' : '');
+    el.className = 'suggest-item ' + s.kind
+      + (s.open && s.orphaned ? ' orphaned' : '')
+      + (s.open ? '' : ' resolved');
     el.innerHTML =
       `<div class="suggest-head">
          <span class="suggest-kind">${s.kind === 'insert' ? 'add' : 'remove'}</span>
          <span class="suggest-who">${esc(s.authorName)}</span>
        </div>
        <div class="suggest-text">${esc(s.text)}</div>` +
-      (s.orphaned ? '<div class="comment-note">This text is no longer in the script.</div>' : '') +
+      (s.open && s.orphaned
+        ? '<div class="comment-note">This text is no longer in the script.</div>' : '') +
+      (s.open ? '' : `<div class="suggest-verdict">${
+        s.status === 'accepted' ? 'Accepted' : 'Rejected'
+      }${s.resolvedBy ? ' by ' + esc(s.resolvedBy) : ''}</div>`) +
       // Reuses the comment thread's markup and styling: a note on a suggestion
       // and a note on a comment are the same thing, and should not look like
       // two different features.
@@ -435,12 +472,20 @@ window.Suggestions = (function () {
         </div>`).join('') +
       `<input class="comment-reply suggest-note" type="text"
               placeholder="${s.replies.length ? 'Reply…' : 'Why this change…'}" />
-       <div class="suggest-actions">
-         <button class="suggest-accept">Accept</button>
-         <button class="suggest-reject">Reject</button>
-       </div>`;
-    el.querySelector('.suggest-accept').onclick = () => { accept(s.id); redraw(); };
-    el.querySelector('.suggest-reject').onclick = () => { reject(s.id); redraw(); };
+       <div class="suggest-actions">${s.open
+         ? `<button class="suggest-accept">Accept</button>
+            <button class="suggest-reject">Reject</button>`
+         : `<button class="suggest-dismiss" title="Remove this record for good">Dismiss</button>`
+       }</div>`;
+    if (s.open) {
+      el.querySelector('.suggest-accept').onclick = () => { accept(s.id); redraw(); };
+      el.querySelector('.suggest-reject').onclick = () => { reject(s.id); redraw(); };
+    } else {
+      el.querySelector('.suggest-dismiss').onclick = () => {
+        if (!confirm('Remove this resolved suggestion and its notes for good?')) return;
+        dismiss(s.id); redraw();
+      };
+    }
 
     const note = el.querySelector('.suggest-note');
     note.onkeydown = (ev) => {
@@ -468,6 +513,8 @@ window.Suggestions = (function () {
 
   // Builds the list into any host, so the sidebar panel and the review modal
   // stay one implementation. Returns how many there are.
+  // Returns how many are still OPEN — what the counts elsewhere mean by "how
+  // much is waiting on someone", which resolved records are not.
   function renderInto(host) {
     if (!host || !live()) return 0;
     const items = list();
@@ -477,8 +524,20 @@ window.Suggestions = (function () {
                        'your changes are proposed for someone else to accept.</p>';
       return 0;
     }
-    for (const s of items) host.appendChild(itemEl(s));
-    return items.length;
+    const open = items.filter((s) => s.open);
+    const done = items.filter((s) => !s.open);
+    for (const s of open) host.appendChild(itemEl(s));
+    if (done.length) {
+      const h = document.createElement('div');
+      h.className = 'comment-subhead';
+      h.textContent = `Resolved (${done.length})`;
+      host.appendChild(h);
+      // Most recently decided first: the older a decision, the less often
+      // anyone goes looking for it.
+      done.sort((a, b) => (b.resolvedAt || 0) - (a.resolvedAt || 0));
+      for (const s of done) host.appendChild(itemEl(s));
+    }
+    return open.length;
   }
 
   // ---------- lifecycle ----------
@@ -543,7 +602,7 @@ window.Suggestions = (function () {
   return {
     attach, detach, redraw,
     enabled, setEnabled, toggle: () => setEnabled(!suggesting),
-    list, accept, reject, acceptAll, rejectAll, reply,
+    list, accept, reject, acceptAll, rejectAll, reply, dismiss,
     // Used by review.js to build the same list inside its modal.
     renderInto,
     // Exposed for collab/test-suggestions.mjs.

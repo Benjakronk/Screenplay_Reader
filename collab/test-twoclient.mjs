@@ -122,6 +122,10 @@ function loadCollab(textarea) {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+// Resolved suggestions stay in the list as a record, so "how many are left"
+// means how many are still open.
+const openOf = (S) => S.list().filter((s) => s.open);
+
 async function twoClients(initial = '') {
   HUB.reset();
   const taA = makeTextarea(''), taB = makeTextarea('');
@@ -263,8 +267,8 @@ console.log('\nsuggestions across two clients');
   });
   test('the reviewer accepting drops the mark on BOTH sides', () => {
     B.S.accept(B.S.list()[0].id);
-    eq(B.S.list().length, 0);
-    eq(A.S.list().length, 0);
+    eq(openOf(B.S).length, 0);
+    eq(openOf(A.S).length, 0);
     eq(A.ta.value, 'Rolige ganske avventende skritt.');
     eq(B.ta.value, 'Rolige ganske avventende skritt.');
   });
@@ -295,8 +299,16 @@ console.log('\nsuggestions across two clients');
     B.S.reject(id);
     eq(A.ta.value, 'Rolige avventende skritt.');
     eq(B.ta.value, 'Rolige avventende skritt.');
-    eq(A.S.list().length, 0);
-    eq(B.S.list().length, 0);
+    eq(openOf(A.S).length, 0);
+    eq(openOf(B.S).length, 0);
+  });
+  test("the decision and its reasoning reach the proposer's side too", () => {
+    // The record is what makes a rejection answerable later: A can see that B
+    // rejected it, not merely that the mark went away.
+    const s = A.S.list()[0];
+    eq(s.status, 'rejected');
+    eq(s.resolvedBy, 'alex');
+    eq(s.text, 'avventende ');
   });
 }
 

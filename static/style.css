@@ -1324,3 +1324,13 @@ body.suggesting .editor { box-shadow: inset 0 2px 0 var(--accent); }
   margin: 0.35rem 0 0.15rem;
 }
 .suggest-item .comment-msg { margin-top: 0.25rem; }
+
+/* A resolved suggestion stays as a record of the decision and the reasoning
+   behind it, set back so open ones still read first. */
+.suggest-item.resolved { opacity: 0.72; border-left-color: var(--muted); }
+.suggest-item.resolved .suggest-text { text-decoration: none; }
+.suggest-verdict {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin-top: 0.3rem;
+}
+.suggest-actions .suggest-dismiss { flex: 0 0 auto; }
