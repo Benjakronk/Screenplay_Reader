@@ -48,7 +48,10 @@
         <!-- Independent pane toggles, not a two-way switch: Read shows the
              paginated preview, Edit shows the source, and either, both or the
              other can be on. They are never both off. -->
-        <div class="mode-switch" role="group" aria-label="Panes" data-prio="10">
+        <!-- data-pin-narrow: never swallowed by the overflow menu on a phone.
+             Switching between reading and editing is the most frequent thing
+             anyone does, and it must not be behind a scroll. -->
+        <div class="mode-switch" role="group" aria-label="Panes" data-prio="10" data-pin-narrow>
           <button data-pane="view" class="active" title="Show the paginated preview (Ctrl+E)">Read</button>
           <button data-pane="source" title="Show the Fountain source (Ctrl+E)">Edit</button>
         </div>

@@ -619,6 +619,15 @@ body.typewriter .pane { padding-top: 40vh; padding-bottom: 40vh; }
   position: fixed; background: var(--paper); border: 1px solid var(--rule);
   border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
   z-index: 300; min-width: 240px; padding: 0.3rem 0; color: var(--ink);
+  /* On a phone this holds most of the toolbar and is taller than the screen.
+     Scroll rather than overflow: showContextMenu measures the height to place
+     the menu, and an uncapped one placed its own top off the top of the
+     screen. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto; overscroll-behavior: contain;
+}
+@supports (max-height: 100dvh) {
+  .ctx-menu { max-height: calc(100dvh - 16px); }
 }
 .ctx-menu.hidden { display: none; }
 .ctx-item {
@@ -1001,8 +1010,11 @@ body.perform .screenplay {
    Kept in step with NARROW_PX in app.js, which decides the behaviour that goes
    with this: one pane at a time, and the sidebar as a drawer. */
 @media (max-width: 760px) {
-  .scene-nav { max-width: 8ch; }
-  .crumbs { min-width: 3rem; font-size: 0.85rem; }
+  /* The panes stay on the bar here (data-pin-narrow), so the width has to come
+     from somewhere: the jump menu shrinks to an arrow-sized control. */
+  .scene-nav { max-width: 6ch; min-width: 3rem; padding-inline: 0.1rem; }
+  .crumbs { min-width: 2.5rem; font-size: 0.85rem; }
+  .mode-switch button { padding-inline: 0.55rem; }
 
   /* THE SIDEBAR BECOMES A DRAWER. Stacking it above the script, as this used to,
      spent a third of a short screen on navigation that is only wanted between

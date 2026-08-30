@@ -4239,12 +4239,20 @@ function showContextMenu(x, y, items) {
     menu.appendChild(btn);
   }
   menu.classList.remove('hidden');
-  // Position, clamping to viewport.
+  // Position, clamping to the viewport at BOTH ends.
+  //
+  // Only the far edge used to be clamped. When the menu is taller than the
+  // screen — which on a phone it is, because nearly every control ends up in
+  // it — `innerHeight - height - 8` goes negative, and min() then placed the
+  // top of the menu above the top of the screen. The first entries were simply
+  // unreachable, and the panes are the first entries.
+  //
+  // The menu scrolls when it does not fit (see .ctx-menu), so the height read
+  // here is already the capped one.
   const rect = menu.getBoundingClientRect();
-  const maxX = window.innerWidth - rect.width - 8;
-  const maxY = window.innerHeight - rect.height - 8;
-  menu.style.left = Math.min(x, maxX) + 'px';
-  menu.style.top  = Math.min(y, maxY) + 'px';
+  const fit = (want, size, extent) => Math.max(8, Math.min(want, extent - size - 8));
+  menu.style.left = fit(x, rect.width, window.innerWidth) + 'px';
+  menu.style.top  = fit(y, rect.height, window.innerHeight) + 'px';
 }
 function hideContextMenu() { $('ctx-menu').classList.add('hidden'); }
 
@@ -4715,13 +4723,19 @@ document.addEventListener('fullscreenchange', syncFullscreenButton);
 // so a long script name, a hidden collaboration button or a translated label
 // all take care of themselves.
 
+// Everything the overflow menu is allowed to swallow.
 function topbarItems() {
   const bar = document.querySelector('.topbar');
   if (!bar) return [];
+  const narrow = isNarrow();
   return [...bar.querySelectorAll('[data-prio]')]
     // A control a feature has switched off (the cloud-only ones) is not in the
     // running at all — it must not reappear in the menu.
-    .filter((el) => !el.classList.contains('hidden'));
+    .filter((el) => !el.classList.contains('hidden'))
+    // On a phone EVERYTHING else ends up in the menu, so switching between
+    // reading and editing — the most frequent thing anyone does — became a
+    // scroll through twenty entries. Pinned controls stay on the bar there.
+    .filter((el) => !(narrow && el.hasAttribute('data-pin-narrow')));
 }
 
 let _layingOutTopbar = false;
@@ -4740,7 +4754,10 @@ function layoutTopbarNow(bar, more) {
   const items = topbarItems().sort(
     (a, b) => Number(b.dataset.prio) - Number(a.dataset.prio));
 
-  for (const el of items) el.classList.remove('overflowed');
+  // Cleared on EVERY control, not just the ones that may be dropped: a pinned
+  // one could be carrying `overflowed` from a wider layout, and it is no longer
+  // in the list that would clear it.
+  for (const el of bar.querySelectorAll('[data-prio]')) el.classList.remove('overflowed');
   more.classList.add('hidden');
 
   // scrollWidth exceeds clientWidth only once the flexible crumbs have hit
