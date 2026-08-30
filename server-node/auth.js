@@ -173,10 +173,15 @@ function atLeast(role, needed) {
 const MAX_EMAIL = 50;
 const MAX_NAME = 50;
 
-// Deliberately narrow rather than RFC-complete: one @, no spaces, a dot in the
-// domain. It rejects addresses that are legal but that nobody here has, and
-// that is the safer direction for something that identifies an account.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// One @, something either side of it, no whitespace. Deliberately NOT stricter
+// than that.
+//
+// The first version also required a dot in the domain, which reads as obviously
+// correct and locked an existing account out of logging in: joachim@eklund is
+// a real address in this database. A login validator is not the place to have
+// opinions about what an address should look like — it runs against accounts
+// that already exist, and rejecting one is not a warning, it is a lockout.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+$/;
 
 // Control characters, including the bidirectional overrides that can make one
 // display name render as another. Stripped rather than rejected: they are never

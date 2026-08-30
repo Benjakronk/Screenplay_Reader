@@ -490,8 +490,18 @@ async function main() {
       assert.match(r.data.error, /50 characters/);
     });
     await test('a malformed email is refused', async () => {
-      const r = await POST('/api/invite', { email: 'not-an-address' }, { as: benToken });
-      assert.equal(r.status, 400);
+      for (const bad of ['not-an-address', '@nobody', 'nobody@', 'two words@x.no']) {
+        const r = await POST('/api/invite', { email: bad }, { as: benToken });
+        assert.equal(r.status, 400, `should have refused ${bad}`);
+      }
+    });
+    await test('an address with no dot in the domain is ACCEPTED', async () => {
+      // A real account in this database is joachim@eklund. Requiring a dot
+      // reads as obviously correct and locks that person out of logging in: a
+      // login validator runs against accounts that already exist, so rejecting
+      // one is not a warning, it is a lockout.
+      const r = await POST('/api/invite', { email: 'someone@intranet' }, { as: benToken });
+      assert.equal(r.status, 200, r.data && r.data.error);
     });
     await test('login rejects a malformed address as a wrong password', async () => {
       // Same message and status as a real failure: this must not become a way
