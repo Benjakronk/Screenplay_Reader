@@ -95,10 +95,30 @@ function setUiScale(v) {
 function applyUiScale(v) {
   document.documentElement.style.setProperty('--ui-scale', String(v));
 }
+// ---------- small screens ----------
+//
+// One breakpoint, in one place, so the CSS and the behaviour cannot disagree
+// about what counts as a phone. Kept in step with the (max-width: 760px) block
+// in style.css.
+const NARROW_PX = 760;
+function isNarrow() {
+  try { return window.matchMedia(`(max-width: ${NARROW_PX}px)`).matches; }
+  catch { return window.innerWidth <= NARROW_PX; }
+}
+
 function applySidebar(open) {
   document.body.classList.toggle('sidebar-collapsed', !open);
 }
 function toggleSidebar() { setSidebarOpen(!getSidebarOpen()); }
+
+// On a phone the sidebar is an overlay drawer, so it starts closed whatever the
+// saved preference says — a drawer covering the script on arrival is not a
+// useful first screen, and the preference belongs to the desktop layout the
+// person set it in. Not saved back, so their desktop stays as they left it.
+function applyInitialLayout() {
+  if (isNarrow()) applySidebar(false);
+  else applyInitialLayout();
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -127,7 +147,12 @@ function renderTree(entries) {
       a.textContent = e.name;
       a.dataset.path = e.path;
       a.href = '#' + encodeURIComponent(e.path);
-      a.onclick = (ev) => { ev.preventDefault(); openScript(e.path); };
+      a.onclick = (ev) => {
+        ev.preventDefault();
+        openScript(e.path);
+        // On a phone the drawer covers what was just opened.
+        if (isNarrow()) setSidebarOpen(false);
+      };
       li.appendChild(a);
     }
     ul.appendChild(li);
@@ -898,6 +923,11 @@ function relayoutEditor() {
 
 function setMode(mode) {
   if (mode !== 'view' && mode !== 'split' && mode !== 'source') mode = 'view';
+  // Two forty-character columns on a phone are two columns nobody can read, so
+  // split resolves to the preview - the paginated page reads better on a small
+  // screen than monospace source does, and Edit is one tap away. The stored
+  // preference is untouched, so a desktop still opens in split.
+  if (mode === 'split' && isNarrow()) mode = 'view';
   const sameMode = mode === state.mode;
 
   // Capture the topmost visible element so we can restore scroll after the
@@ -948,6 +978,9 @@ function setMode(mode) {
 // hidden: turning off the only visible pane swaps to the other instead, which
 // is what makes a single button read as "show just this one".
 function togglePane(which) {
+  // Asking for a pane on a phone is asking to switch to it, not to add it
+  // beside the other one.
+  if (isNarrow()) { setMode(which === 'view' ? 'view' : 'source'); return; }
   let showView   = state.mode === 'view'   || state.mode === 'split';
   let showSource = state.mode === 'source' || state.mode === 'split';
   if (which === 'view') showView = !showView; else showSource = !showSource;
@@ -4876,7 +4909,22 @@ function wire() {
     // Nothing to do here since scrolling moves the caret along naturally.
   });
   // A resize changes the pane width, so every measured position is stale.
+  { const b = $('sidebar-backdrop'); if (b) b.onclick = () => setSidebarOpen(false); }
+
+  // Crossing the phone breakpoint — a rotation, or a desktop window dragged
+  // narrow — changes what the layout is allowed to do, so re-apply both rules
+  // rather than leaving a split view wedged onto a 400px screen.
+  let wasNarrow = isNarrow();
   window.addEventListener('resize', () => {
+    const narrow = isNarrow();
+    if (narrow !== wasNarrow) {
+      wasNarrow = narrow;
+      applyInitialLayout();
+      // Widening restores the saved mode, which may be the split view a phone
+      // was not allowed to show; narrowing re-runs the current one so setMode
+      // resolves it down to a single pane.
+      setMode(narrow ? state.mode : getMode());
+    }
     relayoutEditor();
     if (window.Comments) window.Comments.redraw();
     if (window.Suggestions) window.Suggestions.redraw();

@@ -111,6 +111,16 @@ html, body {
   margin: 0; padding: 0; height: 100%;
   background: var(--bg); color: var(--ink);
 }
+/* Mobile browsers count the URL bar in 100vh, so a full-height app is taller
+   than the screen and the status bar sits under the chrome. dvh is the visible
+   height, and shrinks as the bar appears. Declared second so browsers without
+   it keep the line above. */
+@supports (height: 100dvh) {
+  html, body { height: 100dvh; }
+}
+
+/* Only ever visible over the drawer on a narrow screen — see the phone block. */
+#sidebar-backdrop { display: none; }
 body {
   font-family: var(--sans);
   font-size: 0.875rem;
@@ -666,6 +676,7 @@ body.typewriter .pane { padding-top: 40vh; padding-bottom: 40vh; }
   min-width: 0; max-width: none; max-height: none;
   border-radius: 0; border: none;
 }
+@supports (height: 100dvh) { .modal-cards { height: 100dvh; } }
 /* The body scrolls, the header stays put. min-height:0 is what actually lets a
    flex child shrink below its content and scroll. */
 .modal-cards .modal-body { flex: 1 1 auto; min-height: 0; }
@@ -976,20 +987,87 @@ body.perform .screenplay {
 }
 
 /* ---------- responsive ---------- */
-@media (max-width: 800px) {
-  body { flex-direction: column; }
-  #sidebar { flex: 0 0 auto; max-height: 30vh; }
-  .actions button, .icon-btn { padding: 0.25rem 0.35rem; font-size: 0.75rem; }
+/* Tablets and narrow desktop windows: the two-pane layout still works, there is
+   just less of it. */
+@media (max-width: 1024px) {
+  .actions button, .icon-btn { padding: 0.25rem 0.4rem; font-size: 0.78rem; }
   .format-toolbar { padding: 0.2rem 0.4rem; }
   .ft-banner { display: none; }
-  .scene-nav { max-width: 10ch; }
-  .crumbs { min-width: 3rem; }
+  .scene-nav { max-width: 12ch; }
+  #sidebar { flex-basis: 210px; }
+}
+
+/* ---------- phones ----------
+   Kept in step with NARROW_PX in app.js, which decides the behaviour that goes
+   with this: one pane at a time, and the sidebar as a drawer. */
+@media (max-width: 760px) {
+  .scene-nav { max-width: 8ch; }
+  .crumbs { min-width: 3rem; font-size: 0.85rem; }
+
+  /* THE SIDEBAR BECOMES A DRAWER. Stacking it above the script, as this used to,
+     spent a third of a short screen on navigation that is only wanted between
+     one script and the next. It overlays instead, and closes as soon as
+     something is chosen. */
+  #sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0;
+    width: min(300px, 84vw);
+    flex-basis: auto;
+    z-index: 150;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+    transform: translateX(0);
+    transition: transform 0.2s ease;
+  }
+  body.sidebar-collapsed #sidebar {
+    /* Moved off-screen rather than collapsed to zero width, so it can slide. */
+    transform: translateX(-101%);
+    flex-basis: auto; padding: 0.75rem; border-right-width: 1px;
+  }
+  #sidebar-backdrop {
+    display: block;
+    position: fixed; inset: 0; z-index: 140;
+    background: rgba(0, 0, 0, 0.35);
+  }
+  body.sidebar-collapsed #sidebar-backdrop { display: none; }
+
+  /* One pane at a time. setMode() already resolves split to a single pane on a
+     phone; this is the layout half of the same decision. */
+  #content.mode-split { grid-template-columns: 0 1fr; }
+  .pane { padding: 1rem 0.5rem; }
+
   /* A modal that is 420px wide has nothing to sit in on a 360px screen. */
   .modal { min-width: 0; width: 96vw; max-width: 96vw; }
   /* .modal-cards is deliberately absent: the beat board wants the whole screen
      most of all on a small one. */
   .modal-wide, .modal-palette, .modal-diff, .modal-tp,
   .modal-review { min-width: 0; width: 96vw; max-width: 96vw; }
+  .modal-help { width: 96vw; min-width: 0; max-width: 96vw; height: 88vh; }
+
+  /* The formatting strip is a long row of small buttons; let it scroll sideways
+     rather than wrap into a wall. */
+  .format-toolbar, .tab-strip {
+    overflow-x: auto; overscroll-behavior-x: contain;
+    flex-wrap: nowrap; -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ---------- touch ----------
+   Keyed on the pointer, not the width: a 1024px tablet is a touch device and a
+   600px desktop window is not. */
+@media (pointer: coarse) {
+  .actions button, .icon-btn, .toolbar button, .mode-switch button,
+  .format-toolbar button, .ctx-item, .review-bulk button, .suggest-actions button {
+    min-height: 38px;
+    padding-inline: 0.6rem;
+  }
+  .tree-file, .outline a { padding-block: 0.4rem; }
+  .comment-reply, .cloud-field input, .cloud-field select { min-height: 38px; }
+
+  /* iOS zooms the whole page when a field smaller than 16px takes focus, and
+     never zooms back out. The editor keeps its zoom setting above that floor. */
+  .editor { font-size: max(16px, calc(13px * var(--zoom))); }
+  .cloud-field input, .cloud-field select, .comment-reply, .palette-input {
+    font-size: max(16px, 0.9rem);
+  }
 }
 
 /* ---------- print → PDF ----------
