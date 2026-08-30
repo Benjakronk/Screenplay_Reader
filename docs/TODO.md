@@ -30,12 +30,19 @@ turned up — see [`cloud-architecture.md`](cloud-architecture.md) or
 Nothing blocking. These are the known gaps, recorded so they are not rediscovered
 as surprises.
 
-- [ ] **`.gitignore`d scripts arrive with CRLF.** `core.autocrlf` is on in this
-      repo's working copy, so `scripts/Åsta.fountain` is CRLF on disk. That is
-      how the cloud copy got CRLF and became uneditable — see the LF invariant in
-      `cloud-architecture.md`. The server now normalises on the way in, so this
-      is defused rather than fixed; a `.gitattributes` marking `*.fountain` as
-      `text eol=lf` would stop it at the source.
+- [x] **Scripts arrived with CRLF.** `core.autocrlf` is on, so
+      `scripts/Åsta.fountain` was CRLF on disk — which is how the cloud copy got
+      CRLF and became uneditable. Fixed at the source 30 August by
+      `.gitattributes` (`* text=auto eol=lf`). The server-side normalisation
+      stays as defence in depth.
+
+      Worth knowing: this also closed a trap nobody had hit. The deploy shell
+      scripts are LF in this working tree only because they were written rather
+      than checked out — a fresh clone on Windows would have produced
+      `#!/usr/bin/env bash`, which fails on the VPS with "bad interpreter".
+
+      Existing files keep their CRLF until re-checked-out. Nothing depends on
+      that; to convert them now: `git rm --cached -r . && git reset --hard`.
 - [ ] **The preview pane does not mark suggestions.** The editor overlay and the
       sidebar panel do, which is enough to review and resolve them. Struck-through
       text in the rendered view is further work in the render pipeline.

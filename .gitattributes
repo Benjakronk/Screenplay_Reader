@@ -1,0 +1,35 @@
+# Line endings are decided here, not by whatever core.autocrlf each machine has.
+#
+# This repository is written on Windows and runs on Linux: the API, the export
+# sidecar and nginx all read these files on the VPS. LF everywhere is the only
+# setting where both ends agree.
+#
+# TWO THINGS THIS PREVENTS, one of which has already happened.
+#
+# 1. A .fountain file checked out as CRLF and imported into cloud mode made the
+#    document UNEDITABLE. A <textarea> normalises CRLF to LF in its value, so the
+#    CRDT held 1430 characters the editor could not show, and every offset that
+#    crossed between them - a typed edit, a comment anchor, a suggestion range -
+#    came out wrong by the number of lines above it. The server now normalises on
+#    the way in and the client heals existing documents, so this is defence in
+#    depth rather than the fix; the fix is in docs.js and collab.js.
+#
+# 2. The deploy shell scripts are copied to the VPS and run there. Checked out
+#    with CRLF, `#!/usr/bin/env bash\r` fails with "bad interpreter" - and they
+#    are LF in this working tree only because they happened to be written rather
+#    than checked out. A fresh clone on Windows would break them.
+
+# Normalise everything to LF in the repository AND in the working tree.
+* text=auto eol=lf
+
+# Spelled out for the two cases above, so the reason is findable from the file
+# rather than only from this comment.
+*.sh        text eol=lf
+*.fountain  text eol=lf
+*.spmd      text eol=lf
+
+# Binary: never examined for line endings, never normalised.
+*.png  binary
+*.jpg  binary
+*.pdf  binary
+*.fdx  text eol=lf
