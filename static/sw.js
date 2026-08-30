@@ -25,7 +25,7 @@ const SHELL = [
   'fountain.js', 'pagination.js',
   'collab.js', 'comments.js', 'suggestions.js', 'blame.js', 'review.js',
   'cloud.js', 'backend.js', 'app.js',
-  'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
+  'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png',
 ];
 
 self.addEventListener('install', (ev) => {
