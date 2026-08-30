@@ -97,6 +97,13 @@ window.Suggestions = (function () {
         authorId: m.get('authorId') || '',
         authorName: m.get('authorName') || 'Someone',
         createdAt: m.get('createdAt') || 0,
+        // Why the change is proposed. Absent on suggestions recorded before
+        // threads existed, which is why this cannot assume the list is there.
+        replies: (m.get('replies') ? m.get('replies').toArray() : []).map((r) => ({
+          authorName: r.get('authorName') || 'Someone',
+          text: r.get('text') || '',
+          at: r.get('at') || 0,
+        })),
       };
     }).sort((x, y) => x.from - y.from || x.createdAt - y.createdAt);
   }
@@ -131,8 +138,37 @@ window.Suggestions = (function () {
       m.set('authorId', (me() && me().id) || '');
       m.set('authorName', who());
       m.set('createdAt', Date.now());
+      // A nested type can only be populated once its parent is in the document,
+      // and the map was pushed above, so this is safe here — see comments.js.
+      m.set('replies', new Y.Array());
     });
     return id;
+  }
+
+  // A note on a suggestion: why the change is proposed, and the back-and-forth
+  // about it. The same shape as a comment thread, so the two render alike.
+  //
+  // Typing in suggest mode creates the suggestion implicitly — there is no
+  // dialog to fill in — so the explanation is added afterwards, from the panel
+  // entry, rather than up front.
+  function reply(id, text) {
+    if (!live() || readOnly()) return;
+    const body = String(text || '').trim();
+    if (!body) return;
+    const m = findMap(id);
+    if (!m) return;
+    if (window.Blame) window.Blame.register();
+    const Y = C().Y;
+    C().ydoc.transact(() => {
+      // Suggestions made before threads existed have no list to push onto.
+      if (!m.get('replies')) m.set('replies', new Y.Array());
+      const r = new Y.Map();
+      m.get('replies').push([r]);          // attach before populating, as above
+      r.set('authorId', (me() && me().id) || '');
+      r.set('authorName', who());
+      r.set('text', body);
+      r.set('at', Date.now());
+    });
   }
 
   // Typing one character at a time does NOT need merging: a Yjs range end
@@ -389,12 +425,32 @@ window.Suggestions = (function () {
        </div>
        <div class="suggest-text">${esc(s.text)}</div>` +
       (s.orphaned ? '<div class="comment-note">This text is no longer in the script.</div>' : '') +
-      `<div class="suggest-actions">
+      // Reuses the comment thread's markup and styling: a note on a suggestion
+      // and a note on a comment are the same thing, and should not look like
+      // two different features.
+      s.replies.map((r) => `
+        <div class="comment-msg">
+          <span class="comment-who">${esc(r.authorName)}</span>
+          <span class="comment-text">${esc(r.text)}</span>
+        </div>`).join('') +
+      `<input class="comment-reply suggest-note" type="text"
+              placeholder="${s.replies.length ? 'Reply…' : 'Why this change…'}" />
+       <div class="suggest-actions">
          <button class="suggest-accept">Accept</button>
          <button class="suggest-reject">Reject</button>
        </div>`;
     el.querySelector('.suggest-accept').onclick = () => { accept(s.id); redraw(); };
     el.querySelector('.suggest-reject').onclick = () => { reject(s.id); redraw(); };
+
+    const note = el.querySelector('.suggest-note');
+    note.onkeydown = (ev) => {
+      if (ev.key !== 'Enter' || !note.value.trim()) return;
+      reply(s.id, note.value.trim());
+      note.value = '';
+      redraw();
+    };
+    // A redraw was held back while this had focus; catch up now that it does not.
+    note.onblur = () => redraw();
     if (!s.orphaned) {
       el.querySelector('.suggest-text').onclick = () => {
         const ta = $('editor');
@@ -405,7 +461,8 @@ window.Suggestions = (function () {
         ta.setSelectionRange(s.from, s.to);
       };
     }
-    if (readOnly()) for (const b of el.querySelectorAll('button')) b.disabled = true;
+    // A viewer reads the discussion but does not join it.
+    if (readOnly()) for (const b of el.querySelectorAll('button, input')) b.disabled = true;
     return el;
   }
 
@@ -428,9 +485,23 @@ window.Suggestions = (function () {
 
   let unsubDoc = null, unsubEdit = null, observed = null, timer = null;
 
+  // Re-rendering the panel replaces its DOM, which would wipe a half-written
+  // note every time a collaborator pressed a key — and a note explaining a
+  // suggestion is exactly the kind of thing written slowly. The overlay still
+  // refreshes; only the list waits, and the note's blur handler asks for the
+  // redraw it missed.
+  const typingNote = () => {
+    const a = document.activeElement;
+    return !!(a && a.classList && a.classList.contains('suggest-note'));
+  };
+
   function redraw() {
     clearTimeout(timer);
-    timer = setTimeout(() => { timer = null; rebuildOverlay(); renderPanel(); }, 150);
+    timer = setTimeout(() => {
+      timer = null;
+      rebuildOverlay();
+      if (!typingNote()) renderPanel();
+    }, 150);
   }
 
   function attach() {
@@ -472,7 +543,7 @@ window.Suggestions = (function () {
   return {
     attach, detach, redraw,
     enabled, setEnabled, toggle: () => setEnabled(!suggesting),
-    list, accept, reject, acceptAll, rejectAll,
+    list, accept, reject, acceptAll, rejectAll, reply,
     // Used by review.js to build the same list inside its modal.
     renderInto,
     // Exposed for collab/test-suggestions.mjs.

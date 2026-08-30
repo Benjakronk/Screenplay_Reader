@@ -212,6 +212,88 @@ console.log('\nresolving several at once');
   });
 }
 
+// ------------------------------------------------------- explaining a change
+console.log('\na suggestion carries its own thread');
+{
+  const { S } = fresh(BASE);
+  const id = S._recordDelete(7, 18);
+  test('a new suggestion starts with no notes', () => {
+    eq(S.list()[0].replies, []);
+  });
+  test('a note records who wrote it and what it says', () => {
+    S.reply(id, 'This line repeats the stage direction above.');
+    const r = S.list()[0].replies;
+    eq(r.length, 1);
+    eq(r[0].text, 'This line repeats the stage direction above.');
+    eq(r[0].authorName, 'Ben');
+  });
+  test('the thread keeps its order as it grows', () => {
+    S.reply(id, 'Agreed, cut it.');
+    eq(S.list()[0].replies.map((r) => r.text),
+       ['This line repeats the stage direction above.', 'Agreed, cut it.']);
+  });
+  test('an empty note is not recorded', () => {
+    S.reply(id, '   ');
+    eq(S.list()[0].replies.length, 2);
+  });
+}
+{
+  // Threads were added after suggestions existed, so a suggestion stored
+  // without a replies list must still accept one rather than throwing.
+  const doc = new Y.Doc();
+  doc.getText('content').insert(0, BASE);
+  const S = load(makeCollab(doc), { id: 'u1', name: 'Ben' });
+  const legacy = new Y.Map();
+  doc.transact(() => {
+    doc.getArray('suggestions').push([legacy]);
+    legacy.set('id', 'old1');
+    legacy.set('kind', 'delete');
+    legacy.set('from', Y.encodeRelativePosition(
+      Y.createRelativePositionFromTypeIndex(doc.getText('content'), 7)));
+    legacy.set('to', Y.encodeRelativePosition(
+      Y.createRelativePositionFromTypeIndex(doc.getText('content'), 18, -1)));
+    legacy.set('text', 'avventende ');
+    legacy.set('authorName', 'Ben');
+    // deliberately no 'replies'
+  });
+  test('a suggestion made before threads existed reads as having none', () => {
+    eq(S.list()[0].replies, []);
+  });
+  test('and can still be given one', () => {
+    S.reply('old1', 'Why this goes');
+    eq(S.list()[0].replies.map((r) => r.text), ['Why this goes']);
+  });
+}
+{
+  // Two people writing on the same thread at once, neither having seen the
+  // other — the case a plain array would lose one half of.
+  const A = new Y.Doc(), B = new Y.Doc();
+  A.getText('content').insert(0, BASE);
+  const SA = load(makeCollab(A), { id: 'u1', name: 'Ben' });
+  const id = SA._recordDelete(7, 18);
+  Y.applyUpdate(B, Y.encodeStateAsUpdate(A));
+  const SB = load(makeCollab(B), { id: 'u2', name: 'Alex' });
+
+  SA.reply(id, 'Cut this?');
+  SB.reply(id, 'It reads better without.');
+  Y.applyUpdate(B, Y.encodeStateAsUpdate(A));
+  Y.applyUpdate(A, Y.encodeStateAsUpdate(B));
+
+  test('concurrent notes both survive the merge', () => {
+    const texts = SA.list()[0].replies.map((r) => r.text).sort();
+    eq(texts, ['Cut this?', 'It reads better without.']);
+    eq(SA.list()[0].replies.length, SB.list()[0].replies.length);
+  });
+  test('both sides agree on the thread', () => {
+    eq(SA.list()[0].replies.map((r) => r.text),
+       SB.list()[0].replies.map((r) => r.text));
+  });
+  test('resolving takes the thread with it', () => {
+    SA.accept(id);
+    eq(SA.list().length, 0);
+  });
+}
+
 // -------------------------------------------------------------- permissions
 console.log('\npermissions');
 {
@@ -220,6 +302,24 @@ console.log('\npermissions');
     S._recordDelete(0, 6);
     eq(S.list().length, 0);
     eq(t.toString(), BASE);
+  });
+}
+{
+  // A viewer reads the discussion but does not join it: the notes live in the
+  // same document as the text, which they have no write access to.
+  const doc = new Y.Doc();
+  doc.getText('content').insert(0, BASE);
+  const writer = load(makeCollab(doc), { id: 'u1', name: 'Ben' });
+  const id = writer._recordDelete(7, 18);
+  writer.reply(id, 'Because it repeats.');
+  const viewer = load(makeCollab(doc, { readOnly: true }), { id: 'u2', name: 'Alex' });
+
+  test('a viewer sees the thread', () => {
+    eq(viewer.list()[0].replies.map((r) => r.text), ['Because it repeats.']);
+  });
+  test('a viewer cannot add to it', () => {
+    viewer.reply(id, 'let me in');
+    eq(writer.list()[0].replies.length, 1);
   });
 }
 

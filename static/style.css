@@ -1314,3 +1314,13 @@ body.suggesting .editor { box-shadow: inset 0 2px 0 var(--accent); }
 /* Version history attribution */
 .hist-authors { color: var(--muted); font-size: 0.78rem; }
 .hist-authors .hist-who { color: var(--ink); }
+
+/* A suggestion carries its own thread — why the change is proposed — using the
+   comment thread's markup, since the two are the same thing. The input is a
+   block here rather than a flex child, because a suggestion card is a column
+   and there is no row of buttons to sit beside. */
+.suggest-note {
+  display: block; width: 100%;
+  margin: 0.35rem 0 0.15rem;
+}
+.suggest-item .comment-msg { margin-top: 0.25rem; }
