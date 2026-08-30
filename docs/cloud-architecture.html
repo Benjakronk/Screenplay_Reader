@@ -705,6 +705,124 @@ img, svg { max-width: 100%; }
         </div>
 
         <div class="decision">
+          <div class="d-head"><h3>Comments and suggestions live in the same Y.Doc as the text</h3><span class="chip verified">Verified</span></div>
+          <p>
+            Not in tables of their own. <code>doc_state.ydoc</code> already syncs, persists,
+            merges and backs up, so a <code>comments</code> and a <code>suggestions</code>
+            <code>Y.Array</code> inside it meant no server change, no second sync path, and a
+            comment arriving in the same update as the edit it refers to.
+          </p>
+          <p>
+            <strong>A suggestion's text is always really in the document</strong> — an open
+            insertion is text that exists and is marked green, an open deletion is text that
+            exists and is marked red. That keeps the textarea and the CRDT in agreement, so
+            export, search, pagination and word count all keep working on a script with open
+            suggestions in it. Resolving is then only ever "keep the text" or "remove the text".
+          </p>
+          <p>
+            Two things about ranges that both caused bugs. <strong>A range end leans:</strong>
+            insertions want to be greedy at both ends so continued typing extends one proposal,
+            deletions greedy at neither, or typing a replacement next to a deletion marks the
+            replacement for deletion too. And <strong>a resolved suggestion's text must be
+            frozen</strong> — an accepted insertion stays in the document with its end still
+            associating rightwards, so a live reading swallows whatever is typed next.
+          </p>
+          <p>
+            Resolved suggestions are kept, so the thread explaining a change outlives the
+            decision. Dismiss is the only thing that removes one.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>Who wrote what: the present exactly, the past coarsely</h3><span class="chip verified">Verified</span></div>
+          <p>
+            <strong>The present.</strong> Every character carries the clientID that inserted it,
+            so per-character authorship is already in the document. A clientID is per
+            <em>session</em>, so the document carries a small <code>authors</code> map written on
+            a browser's first edit — not on connect, which would add an entry every time someone
+            merely opened the script.
+          </p>
+          <p>
+            <strong>The past.</strong> <code>doc_versions.state_vector</code> records how many
+            operations each client had produced at the moment of a snapshot; comparing
+            consecutive vectors names exactly who contributed in between.
+          </p>
+          <p>
+            <strong>Why not per-character attribution inside a diff:</strong> Yjs answers that
+            only with snapshots, and snapshots require <code>gc: false</code> — keeping every
+            character anyone ever deletes, forever, irreversibly for a document already in use.
+            A state vector is a few bytes per client and costs the document nothing.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>Inviting is an administrator's job; sharing is not</h3><span class="chip verified">Verified</span></div>
+          <p>
+            Sharing with an existing account is an ordinary thing an owner does. Creating an
+            invite mints a credential that becomes an account on an install with no public
+            registration, so <code>users.is_admin</code> gates <code>/api/invite</code> and
+            nothing else. Promotion is a shell operation, not reachable from the app.
+          </p>
+          <p>
+            <code>auth.js</code> holds the input rules in one place — 50 characters, normalised,
+            stripped of control characters including the bidirectional overrides that let one
+            display name render as another. Bounded <em>first</em>: without a cap an 8 MB body
+            reached password hashing before anything rejected it.
+          </p>
+          <p>
+            <strong>The address rule is deliberately loose.</strong> A first version required a
+            dot in the domain and locked a real account out of logging in. A login validator runs
+            against accounts that already exist, so rejecting one is not a warning, it is a
+            lockout.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>The phone gets a different rendering, not a smaller one</h3><span class="chip verified">Verified</span></div>
+          <p>
+            A screenplay page is a physical sheet 85 characters wide. Fitting it across 375px
+            means about 6px type: it fits, and nobody can read it. Below 760px the sheet is
+            dropped and the script runs as one continuous column at full size, the page boundary
+            surviving as a rule and a number.
+          </p>
+          <p>
+            A <strong>styling variant, not a second renderer</strong> — same pagination, same
+            DOM, one body class. Rotating to landscape brings the real sheets back. Tablets keep
+            the page, scaled to fit its pane. Touch sizing is keyed on <code>pointer: coarse</code>
+            rather than width, because a 1024px tablet is a touch device and a 600px desktop
+            window is not.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>The toolbar spends its overflow into a menu</h3><span class="chip verified">Verified</span></div>
+          <p>
+            Every control carries a <code>data-prio</code>; when the bar runs out of room they
+            move into a ⋯ menu, highest first. Measuring beats breakpoints — a long script name,
+            the cloud-only buttons appearing mid-session, or a wider translated label all take
+            care of themselves. The rule it exists to keep is that <strong>nothing disappears
+            without somewhere to reach it</strong>, which is why a control that is not a button
+            still contributes a line, and why the panes are pinned out of the menu on a phone.
+          </p>
+        </div>
+
+        <div class="decision">
+          <div class="d-head"><h3>Installable, with the network still in charge</h3><span class="chip verified">Verified</span></div>
+          <p>
+            A manifest, an icon set and a service worker make the app installable on iOS, Android
+            and desktop. The worker caches <strong>network-first</strong>, which is not the usual
+            advice: a cache-first shell is faster, but a deploy then does not reach anyone until
+            the worker updates — on an app under active change, a way to ship a bug that cannot
+            be recalled. <code>/api/</code> is never cached, because a stale answer there would
+            show a script as it used to be.
+          </p>
+          <p>
+            Not a new offline mode: <code>backend.js</code> already falls back to IndexedDB.
+            Caching the shell is what makes that reachable from a home screen icon.
+          </p>
+        </div>
+
+        <div class="decision">
           <div class="d-head"><h3>app.js is not modified</h3><span class="chip untested">Logic tested, DOM wiring not</span></div>
           <p>
             <code>cloud.js</code> wraps four globals from outside. app.js is a classic script with no
@@ -827,14 +945,14 @@ fdx.fdx_to_fountain(xml)                    -&gt; str</code></pre>
 
       <section id="data">
         <h2 class="sec">Data model</h2>
-<pre><code>users        (id, email UNIQUE, name, password_hash, created_at, last_seen)
+<pre><code>users        (id, email UNIQUE, name, password_hash, created_at, last_seen, is_admin)
 invites      (token_hash PK, email, doc_id, doc_role, invited_by,
               expires_at, used_at, used_by)
 sessions     (token_hash PK, user_id, created_at, expires_at)
 documents    (id, owner_id, path, created_at, updated_at, deleted_at)
 doc_access   (doc_id, user_id, role)      -- owner | editor | viewer
 doc_state    (doc_id PK, ydoc BYTEA, updated_at)
-doc_versions (id, doc_id, name, timestamp, content, author_id, created_at)</code></pre>
+doc_versions (id, doc_id, name, timestamp, content, author_id, created_at, state_vector)</code></pre>
         <ul>
           <li>
             <strong><code>documents.path</code> deliberately preserves path addressing</strong>, so

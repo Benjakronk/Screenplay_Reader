@@ -193,6 +193,128 @@ twice — once recording a browser offset into the CRDT, once reading it back �
 so the marks *looked* correctly placed as long as nobody edited. Only the stored
 quote gave it away, by starting mid-word.
 
+### Comments and suggestions live in the same Y.Doc as the text
+
+Not in tables of their own. `doc_state.ydoc` already syncs, persists, merges and
+backs up, so putting a `comments` and a `suggestions` `Y.Array` inside it meant
+no server change, no second sync path, and a comment arriving in the same update
+as the edit it refers to — never out of order.
+
+Both anchor with `Y.RelativePosition`, so a mark stays on its words when someone
+inserts text above it. Yjs does not invalidate a position whose text is deleted;
+it collapses it toward a neighbour, so `to - from === 0` is the orphan signal.
+
+**A suggestion's text is always really in the document** — an open insertion is
+text that exists and is marked green, an open deletion is text that exists and is
+marked red. That mirrors Word's "All Markup" view and is what keeps the textarea
+and the CRDT in agreement, so export, search, pagination and word count all keep
+working on a script with open suggestions in it. Resolving is then only ever
+"keep the text" or "remove the text".
+
+Two things about ranges that are not obvious and both caused bugs:
+
+- **A range end leans.** A Yjs relative position binds to a character, and
+  `assoc` picks which side. Insertions want to be greedy at both ends so
+  continued typing extends one proposal; deletions want to be greedy at neither,
+  or typing a replacement next to a deletion marks the replacement for deletion
+  too.
+- **A resolved suggestion's text must be frozen.** An accepted insertion stays in
+  the document with its end still associating rightwards, so a live reading would
+  swallow whatever is typed next; a removed one leaves nothing to read at all.
+  The copy is frozen in the same transaction that records the outcome.
+
+Resolved suggestions are kept, not deleted, so the thread explaining a change
+outlives the decision. `Dismiss` is the only thing that removes one.
+
+### Who wrote what: the present exactly, the past coarsely
+
+Two different questions, and Yjs answers them at very different prices.
+
+**The present.** Every character carries the clientID that inserted it, so
+per-character authorship is already in the document. `blame.js` walks the item
+list and turns it into stretches per person. A clientID is per *session*, so the
+document carries a small `authors` map from clientID to person, written on a
+browser's **first edit** — not on connect, which would add an entry every time
+someone merely opened the script.
+
+**The past.** `doc_versions.state_vector` records, per client, how many
+operations each had produced at the moment of a snapshot; comparing consecutive
+vectors names exactly who contributed in between. Coarse — "who worked on this
+version", not "who wrote this sentence".
+
+**Why not per-character attribution inside a diff**, which is the same question
+asked of the past: Yjs answers it only with snapshots, and snapshots require the
+document to be created with `gc: false`. That keeps every character anyone ever
+deletes, forever, and cannot be undone for a document already in use. A state
+vector is a few bytes per client and costs the document nothing.
+
+Nothing invents a name. A client that never registered — a file import, or
+anything written before this existed — reports as unattributed rather than being
+guessed at.
+
+### Inviting is an administrator's job; sharing is not
+
+Sharing with an account that already exists is an ordinary thing an owner does.
+Creating an invite is different in kind: on an install with no public
+registration it mints a credential that becomes an account. So `users.is_admin`
+gates `/api/invite` only, and the share dialog offers a list of people who
+already have accounts. Promotion is a shell operation (`create-user.js --admin`),
+not something reachable from the app.
+
+`auth.js` holds the input rules in one place — addresses and names bounded to 50
+characters, normalised, stripped of control characters including the
+bidirectional overrides that let one display name render as another. Bounded
+*first*: without a cap an 8 MB body reached password hashing before anything
+rejected it.
+
+**The address rule is deliberately loose** — one `@`, no whitespace, and nothing
+more. A first version required a dot in the domain, which reads as obviously
+correct and locked a real account (`joachim@eklund`) out of logging in. A login
+validator runs against accounts that already exist, so rejecting one is not a
+warning, it is a lockout.
+
+### The phone gets a different rendering, not a smaller one
+
+A screenplay page is a physical sheet, 85 characters wide. Fitting it across
+375px means about 6px type: it fits, and nobody can read it. Below 760px the
+sheet is dropped and the script runs as one continuous column at full size, with
+the page boundary surviving as a rule and a number.
+
+It is a **styling variant, not a second renderer** — same pagination, same DOM,
+one body class. Rotating to landscape passes the breakpoint and brings the real
+sheets back, which is the escape hatch when the layout itself is what is being
+checked. Tablets keep the real page, scaled to fit its pane.
+
+The same breakpoint drives the rest: the sidebar becomes an overlay drawer, and
+split resolves to a single pane. Touch sizing is keyed on `pointer: coarse`
+rather than width, because a 1024px tablet is a touch device and a 600px desktop
+window is not.
+
+### The toolbar spends its overflow into a menu
+
+Every control carries a `data-prio`; when the bar runs out of room they move into
+a `⋯` menu, highest number first. Measuring beats breakpoints — a long script
+name, the cloud-only buttons appearing mid-session, or a wider translated label
+all take care of themselves.
+
+The rule the menu exists to keep is that **nothing disappears without somewhere
+to reach it**, which is why a control that is not a button (the connection
+status, the collaborator chips) still contributes a line, and why the panes are
+pinned out of the menu on a phone.
+
+### Installable, with the network still in charge
+
+A manifest, an icon set and a service worker make the app installable on iOS,
+Android and desktop. The worker caches **network-first**, which is not the usual
+advice: a cache-first shell is faster, but it means a deploy does not reach
+anyone until the worker updates — on an app under active change, a way to ship a
+bug that cannot be recalled. `/api/` is never cached, because a stale answer
+there would show a script as it used to be.
+
+This is not a new offline mode. `backend.js` already falls back to IndexedDB when
+no server answers; caching the shell is what makes that reachable from a home
+screen icon with no connection.
+
 ### app.js is not modified
 
 `cloud.js` wraps four globals from outside — `markDirty`, `applySmartUppercase`,
@@ -287,13 +409,13 @@ The cloud mirrors that: `documents.deleted_at` is set, and a partial unique inde
 ## Data model
 
 ```
-users        (id, email UNIQUE, name, password_hash, created_at, last_seen)
+users        (id, email UNIQUE, name, password_hash, created_at, last_seen, is_admin)
 invites      (token_hash PK, email, doc_id, doc_role, invited_by, expires_at, used_at, used_by)
 sessions     (token_hash PK, user_id, created_at, expires_at)
 documents    (id, owner_id, path, created_at, updated_at, deleted_at)
 doc_access   (doc_id, user_id, role)      -- owner | editor | viewer
 doc_state    (doc_id PK, ydoc BYTEA, updated_at)
-doc_versions (id, doc_id, name, timestamp, content, author_id, created_at)
+doc_versions (id, doc_id, name, timestamp, content, author_id, created_at, state_vector)
 ```
 
 Notes worth keeping in mind:
@@ -312,6 +434,14 @@ Notes worth keeping in mind:
 - **Documents shared with you appear under `Shared/<owner>/`**, which the tree
   renderer already supports as nested `type: 'dir'` entries. `Shared` is a
   reserved first path segment.
+- **`users.is_admin`** gates `/api/invite` and nothing else. It is a property of
+  the person, not of any document, because inviting is about who may exist here
+  rather than who may read what.
+- **`doc_versions.state_vector`** is what makes a version say who changed it.
+  `author_id` only ever recorded who pressed Ctrl+S.
+- **Comments, suggestions and the clientID→person `authors` map live INSIDE
+  `doc_state.ydoc`**, not in tables. They are `Y.Array`s and a `Y.Map` in the
+  same document as the text — see the decision above.
 
 ## What is verified, and what is not
 
@@ -320,13 +450,13 @@ All suites run with **no database server and no network**: `db.js` has a
 
 | Suite | Count | What it actually exercises |
 |---|---|---|
-| `tests/fountain/test_python.py` | 16 | the Fountain parser (pre-existing; unchanged) |
-| `server-node/test/smoke.js` | 49 (53 with the sidecar) | the real Express app on real Postgres: schema, auth, the whole access-control matrix, history semantics, rename/delete, CRDT storage, and — with `EXPORT_SERVICE_URL` set — real PDF/FDX rendering and `.fdx` import |
+| `tests/fountain/test_python.py` | 32 | the Fountain parser, plus character identity and which scene headings each format keeps — the last two also assert the JavaScript and Python ports agree, by running both over the same input |
+| `server-node/test/smoke.js` | 66 (70 with the sidecar) | the real Express app on real Postgres: schema, auth, the whole access-control matrix, who may invite, the input rules, version attribution, history semantics, rename/delete, CRDT storage, and — with `EXPORT_SERVICE_URL` set — real PDF/FDX rendering and `.fdx` import |
 | `server-node/test/collab.js` | 14 | the real Hocuspocus server over real WebSockets: auth rejection (no token / forged / no access / unknown doc), propagation between two clients, convergence of concurrent edits, server-enforced read-only, persistence, and reload after a restart |
 | `collab/test-binding.mjs` | 11 | the diff (3000 fuzzed edits) and CRDT convergence, including same-offset concurrent inserts and per-user undo |
-| `collab/test-twoclient.mjs` | 19 | two real clients through the real `collab.js`: `attach()`, the observer and `applyRemote()` writing to a textarea, plus suggestions crossing between them and CRLF documents |
+| `collab/test-twoclient.mjs` | 20 | two real clients through the real `collab.js`: `attach()`, the observer and `applyRemote()` writing to a textarea, plus suggestions crossing between them and CRLF documents |
 | `collab/test-comments.mjs` | 16 | anchoring, orphan detection, threads, permissions, and two clients commenting and replying at once |
-| `collab/test-suggestions.mjs` | 21 | that each kind of accept and reject leaves exactly the right text, including after an anchor shift, when orphaned, in bulk, and while correcting yourself mid-suggestion |
+| `collab/test-suggestions.mjs` | 35 | that each kind of accept and reject leaves exactly the right text, including after an anchor shift, when orphaned, in bulk, and while correcting yourself mid-suggestion |
 
 **A gap worth remembering.** For a while `test-binding.mjs` was the only binding
 coverage, and it re-implements the sync by hand against raw `Y.Doc`s. That left
@@ -399,14 +529,26 @@ Restarting mid-edit does not lose the last few seconds of anyone's typing.
 | `export-service/export_server.py` | stateless PDF/FDX sidecar |
 | `static/config.js` | the one place the API domain is set |
 | `static/cloud.js` | session, sharing UI, collaboration lifecycle, app.js wrappers |
-| `static/collab.js` | the Y.Text ↔ textarea binding |
+| `static/collab.js` | the Y.Text ↔ textarea binding, and the LF invariant |
+| `static/comments.js` | comment threads anchored to ranges |
+| `static/suggestions.js` | tracked changes: propose, explain, accept, reject |
+| `static/blame.js` | who wrote what, from the CRDT's own item list |
+| `static/review.js` | the comments-and-suggestions modal |
+| `static/sw.js`, `static/manifest.json` | what makes it installable, and openable offline |
 | `static/vendor/collab-bundle.js` | generated + committed; keeps the frontend build-free |
 | `collab/build.mjs` | regenerates that bundle |
+| `scripts/make-icons.py` | redraws the app icon at the sizes a manifest needs |
+| `server-node/deploy/patch-nginx-web.py` | edits the LIVE nginx config in place — never copy over it, certbot owns it |
 
 Changed in the existing codebase: `static/backend.js` (three-way boot, URL
-rewrite, auth header), `static/index.html` (script tags), `static/style.css`
-(a `cloud-mode` section). **Untouched:** `app.js`, `server.py`, `fountain.py`,
-`fdx.py`, `pdf_layout.py`, `pagination.py`.
+rewrite, auth header), `static/index.html` (script tags, the manifest and the
+web-app meta), `static/style.css` (cloud mode, the responsive and reflow layers).
+
+**`app.js` is no longer untouched.** It was, through the whole backend build, and
+the features since have needed it: the overflow menu, the source measure, the
+mobile layout rules, character identity, and the beat board. `server.py`,
+`fountain.py`, `fdx.py` and `pdf_layout.py` are still untouched by cloud mode;
+`pagination.py` changed only in lockstep with `pagination.js`.
 
 ## Open items
 

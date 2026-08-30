@@ -104,6 +104,16 @@ Hello.
   for rehearsal. `P` toggles, `Esc` exits.
 - **Bookmarks + resume**: `B` bookmarks current scroll position; the app
   remembers the last script opened and where you were in it.
+- **Beat board** (`📇`): every scene as a card showing its first paragraph in
+  full, dragged to reorder. Takes the whole window while open.
+- **Install it**: on iOS use Safari's Share → *Add to Home Screen*; Android and
+  desktop Chrome/Edge offer *Install*. It then opens in its own window, and the
+  app shell is cached so it starts without a network — where it falls back to
+  the same offline storage described above.
+- **Phone and tablet**: the sidebar becomes a drawer, one pane shows at a time,
+  and on a phone the script reflows into a single readable column rather than
+  shrinking an 8.5-inch page onto a 6-inch screen. Rotate to landscape for the
+  real paginated pages.
 
 ## Keyboard
 
@@ -162,6 +172,18 @@ What changes when you are signed in:
   own as one JSON archive, and **⤵ Import** / **☁ Import backup** to bring
   either back in. Nothing is trapped in the cloud: a screenplay is a text file,
   and you can always hold a copy.
+- **Comments and suggestions.** Select text and *Comment on selection* to start
+  a thread. `✎` turns on suggest mode: what you type is proposed rather than
+  applied, in green for additions and struck-through red for removals, and each
+  suggestion carries its own thread explaining why. `💬` opens both side by side.
+  A resolved suggestion is kept, with who decided and the reasoning intact.
+- **Who wrote what.** `▤` stripes the margin by author and lists each person's
+  share of the script. The version history names who contributed to each saved
+  version, not just who pressed save.
+- **Inviting is an administrator's job.** Anyone can share a script with someone
+  who already has an account — the dialog lists them. Bringing a *new* person in
+  creates an account on this server, so it takes an administrator
+  (`node create-user.js <email> --admin` on the box).
 - **Your account.** The initial in the toolbar opens a dialog to change your
   password or sign out. Changing it requires the current one and signs you out
   everywhere else, so it doubles as "evict whoever else is signed in as me".

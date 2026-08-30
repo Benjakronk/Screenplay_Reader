@@ -55,11 +55,29 @@ as surprises.
       run by hand from an admin shell its `find` prune fails, because postgres
       cannot read `/home/admin`. Harmless under cron, which runs from postgres's
       own home — but it will look like a failed backup if you ever test it.
-- [ ] **gzip does not cover the Yjs bundle.** `gzip_types` lists
-      `application/javascript`, but nginx labels `.js` as `text/javascript`, so
-      the 122 kB bundle is served uncompressed. Adding `text/javascript` would
-      take it to roughly 35 kB.
+- [x] **gzip now covers JavaScript.** `gzip_types` listed only
+      `application/javascript` while nginx labels `.js` as `text/javascript`, so
+      every script went out uncompressed. Fixed 30 August by
+      `deploy/patch-nginx-web.py`: the Yjs bundle is 122 kB → 43 kB and `app.js`
+      210 kB → 75 kB.
 - [ ] **The VPS has no working IPv6.** Nothing depends on it, but an AAAA record
       for any service on that box would break IPv6-capable clients.
 - [ ] **A push no longer deploys the frontend.** `git pull` on the box does.
       A cron or a webhook would close the gap if it becomes tiresome.
+- [ ] **Dragging to reorder does not work on touch.** The beat board and the
+      outline both reorder scenes with HTML5 drag-and-drop, which does not fire
+      for touch events. Both are readable on a phone; neither can be reordered
+      there. Needs a pointer-event drag implementation.
+- [ ] **The nginx config in `deploy/` is not what is on the box.** Certbot
+      rewrote the live file when it issued the certificate, so it holds the TLS
+      block and the committed one does not. Copying it over would silently drop
+      HTTPS — `nginx -t` passes, because an HTTP-only server is valid. Use
+      `deploy/patch-nginx-web.py`, which edits in place.
+- [ ] **Nobody but the owner is an administrator.** `benjamin@lektorensrud.no`
+      was promoted by hand; anyone else who should be able to invite needs
+      `node create-user.js <email> --admin` on the box.
+- [ ] **Åsta's earliest text is unattributed.** Blame shows about 96% as
+      "Imported from file" — the restore of 29 August — and the rest as
+      unattributed browser sessions that predate the clientID→person registry.
+      Everything written since is attributed; this resolves itself as the script
+      is worked on.
